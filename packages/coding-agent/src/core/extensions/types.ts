@@ -337,7 +337,7 @@ export interface ToolDefinition<TParams extends TSchema = TSchema, TDetails = un
 	name: string;
 	/** Human-readable label for UI */
 	label: string;
-	/** Description for LLM */
+	/** Description sent to the LLM via the API tool listing (can be detailed/long) */
 	description: string;
 	/** Optional one-line snippet for the Available tools section in the default system prompt. Falls back to description when omitted. */
 	promptSnippet?: string;

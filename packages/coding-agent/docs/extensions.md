@@ -1342,6 +1342,10 @@ Use `promptGuidelines` to add tool-specific bullets to the default system prompt
 
 Note: Some models are idiots and include the @ prefix in tool path arguments. Built-in tools strip a leading @ before resolving paths. If your custom tool accepts a path, normalize a leading @ as well.
 
+- `description` — detailed description sent to the LLM via the API tool listing (can be multi-line).
+- `shortDescription` — optional short one-liner shown in the system prompt tool list. Falls back to the first line of `description` if omitted.
+- `systemGuidelines` — bullet points added to the system prompt guidelines section when the tool is active.
+
 ### Tool Definition
 
 ```typescript

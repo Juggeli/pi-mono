@@ -76,7 +76,13 @@ import type { BranchSummaryEntry, CompactionEntry, SessionManager } from "./sess
 import { getLatestCompactionEntry } from "./session-manager.js";
 import type { SettingsManager } from "./settings-manager.js";
 import { BUILTIN_SLASH_COMMANDS, type SlashCommandInfo, type SlashCommandLocation } from "./slash-commands.js";
-import { buildSystemPrompt } from "./system-prompt.js";
+import {
+	BUILTIN_TOOL_ORDER,
+	BUILTIN_TOOL_SHORT_DESCRIPTIONS,
+	type BuiltinToolName,
+	buildSystemPrompt,
+	type SystemPromptToolInfo,
+} from "./system-prompt.js";
 import type { BashOperations } from "./tools/bash.js";
 import { createAllTools } from "./tools/index.js";
 
@@ -847,6 +853,22 @@ export class AgentSession {
 			toolSnippets,
 			promptGuidelines,
 		});
+	}
+
+	private _buildSystemPromptTools(toolNames: string[]): SystemPromptToolInfo[] {
+		const orderedNames = this._orderSystemPromptTools(toolNames);
+		return orderedNames.flatMap((name) => {
+			const toolInfo = this._systemPromptToolInfo.get(name);
+			return toolInfo ? [toolInfo] : [];
+		});
+	}
+
+	private _orderSystemPromptTools(toolNames: string[]): string[] {
+		const uniqueNames = Array.from(new Set(toolNames));
+		const builtinNames = new Set<string>(BUILTIN_TOOL_ORDER);
+		const orderedBuiltin = BUILTIN_TOOL_ORDER.filter((name) => uniqueNames.includes(name));
+		const customNames = uniqueNames.filter((name) => !builtinNames.has(name)).sort();
+		return [...orderedBuiltin, ...customNames];
 	}
 
 	// =========================================================================

@@ -5,8 +5,11 @@
 import { getDocsPath, getExamplesPath, getReadmePath } from "../config.js";
 import { formatSkillsForPrompt, type Skill } from "./skills.js";
 
-/** Tool descriptions for system prompt */
-const toolDescriptions: Record<string, string> = {
+export const BUILTIN_TOOL_ORDER = ["read", "bash", "edit", "write", "grep", "find", "ls"] as const;
+export type BuiltinToolName = (typeof BUILTIN_TOOL_ORDER)[number];
+
+/** Short one-liner descriptions for built-in tools, used in the system prompt tool list */
+export const BUILTIN_TOOL_SHORT_DESCRIPTIONS: Record<BuiltinToolName, string> = {
 	read: "Read file contents",
 	bash: "Execute bash commands (ls, grep, find, etc.)",
 	edit: "Make surgical edits to files (find exact text and replace)",
@@ -14,6 +17,25 @@ const toolDescriptions: Record<string, string> = {
 	grep: "Search file contents for patterns (respects .gitignore)",
 	find: "Find files by glob pattern (respects .gitignore)",
 	ls: "List directory contents",
+};
+
+export interface SystemPromptToolInfo {
+	/** Tool name (used in the Available tools list) */
+	name: string;
+	/** Short one-line description for the system prompt tool list. Empty string = hidden from list. Undefined = resolve from full description at construction time. */
+	shortDescription?: string;
+	/** Additional guideline bullets appended to the system prompt guidelines section */
+	systemGuidelines?: string[];
+}
+
+const DEFAULT_SELECTED_TOOLS = ["read", "bash", "edit", "write"] as const;
+
+const buildDefaultToolEntries = (selectedTools?: string[]): SystemPromptToolInfo[] => {
+	const toolNames = selectedTools ?? DEFAULT_SELECTED_TOOLS;
+	return toolNames.flatMap((name) => {
+		const shortDescription = BUILTIN_TOOL_SHORT_DESCRIPTIONS[name as BuiltinToolName];
+		return shortDescription ? [{ name, shortDescription }] : [];
+	});
 };
 
 export interface BuildSystemPromptOptions {
@@ -56,6 +78,9 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions = {}): strin
 
 	const contextFiles = providedContextFiles ?? [];
 	const skills = providedSkills ?? [];
+	const tools = providedTools ?? buildDefaultToolEntries(selectedTools);
+	const toolNames = tools.map((tool) => tool.name);
+	const toolSystemGuidelines = tools.flatMap((tool) => tool.systemGuidelines ?? []);
 
 	if (customPrompt) {
 		let prompt = customPrompt;
@@ -74,7 +99,7 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions = {}): strin
 		}
 
 		// Append skills section (only if read tool is available)
-		const customPromptHasRead = !selectedTools || selectedTools.includes("read");
+		const customPromptHasRead = toolNames.includes("read");
 		if (customPromptHasRead && skills.length > 0) {
 			prompt += formatSkillsForPrompt(skills);
 		}
@@ -115,13 +140,13 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions = {}): strin
 		guidelinesList.push(guideline);
 	};
 
-	const hasBash = tools.includes("bash");
-	const hasEdit = tools.includes("edit");
-	const hasWrite = tools.includes("write");
-	const hasGrep = tools.includes("grep");
-	const hasFind = tools.includes("find");
-	const hasLs = tools.includes("ls");
-	const hasRead = tools.includes("read");
+	const hasBash = toolNames.includes("bash");
+	const hasEdit = toolNames.includes("edit");
+	const hasWrite = toolNames.includes("write");
+	const hasGrep = toolNames.includes("grep");
+	const hasFind = toolNames.includes("find");
+	const hasLs = toolNames.includes("ls");
+	const hasRead = toolNames.includes("read");
 
 	// File exploration guidelines
 	if (hasBash && !hasGrep && !hasFind && !hasLs) {
@@ -165,7 +190,11 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions = {}): strin
 
 	const guidelines = guidelinesList.map((g) => `- ${g}`).join("\n");
 
-	let prompt = `You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.
+	const baseDescription =
+		"You are an expert coding assistant operating inside pi, a coding agent harness. You help users by reading files, executing commands, editing code, and writing new files.";
+	const description = baseDescription;
+
+	let prompt = `${description}
 
 Available tools:
 ${toolsList}
