@@ -22,7 +22,7 @@ export const BUILTIN_TOOL_SHORT_DESCRIPTIONS: Record<BuiltinToolName, string> = 
 export interface SystemPromptToolInfo {
 	/** Tool name (used in the Available tools list) */
 	name: string;
-	/** Short one-line description for the system prompt tool list. Empty string = hidden from list. Undefined = resolve from full description at construction time. */
+	/** Short one-line description for the system prompt tool list. If provided, the tool is shown. If undefined, the tool is hidden. */
 	shortDescription?: string;
 	/** Additional guideline bullets appended to the system prompt guidelines section */
 	systemGuidelines?: string[];
