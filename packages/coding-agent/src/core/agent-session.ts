@@ -2047,7 +2047,7 @@ export class AgentSession {
 			const { definition } = customTool;
 			systemPromptToolInfo.set(definition.name, {
 				name: definition.name,
-				shortDescription: definition.shortDescription ?? definition.description?.split("\n")[0],
+				shortDescription: definition.shortDescription,
 				systemGuidelines: definition.systemGuidelines,
 			});
 		}
