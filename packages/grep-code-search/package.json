@@ -1,0 +1,13 @@
+{
+  "name": "grep-code-search",
+  "version": "1.0.0",
+  "description": "Code search extension for pi using grep.app API",
+  "main": "index.ts",
+  "peerDependencies": {
+    "@mariozechner/pi-coding-agent": "*",
+    "@mariozechner/pi-tui": "*",
+    "@sinclair/typebox": "*"
+  },
+  "keywords": ["search", "code", "github", "grep"],
+  "license": "MIT"
+}

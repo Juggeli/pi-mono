@@ -1,0 +1,10 @@
+{
+  "name": "exa-tools",
+  "description": "Exa web search and content extraction tools for pi",
+  "version": "1.0.0",
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  }
+}
