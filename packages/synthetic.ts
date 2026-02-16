@@ -26,28 +26,9 @@ function getColorForPercent(percent: number): string {
 export default function (pi: ExtensionAPI) {
   let lastUpdate = 0;
 
-  // Register the synthetic provider
-  pi.registerProvider("synthetic", {
-    baseUrl: "https://api.synthetic.new/openai/v1",
-    apiKey: "SYNTHETIC_API_KEY",
-    api: "openai-completions",
-    models: [
-      {
-        id: "hf:nvidia/Kimi-K2.5-NVFP4",
-        name: "Kimi-K2.5-NVFP4",
-        reasoning: true,
-        input: ["text", "image"],
-        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-        contextWindow: 256000,
-        maxTokens: 16384
-      }
-    ]
-  });
-
   // Fetch and update quota status with rate limiting
   async function updateQuotaStatus(ctx: Context) {
     const theme = ctx.ui.theme;
-    const apiKey = process.env.SYNTHETIC_API_KEY;
 
     // Only show when using synthetic model
     const model = ctx.model;
@@ -61,6 +42,7 @@ export default function (pi: ExtensionAPI) {
       return;
     }
 
+    const apiKey = await ctx.modelRegistry.getApiKeyForProvider("synthetic");
     if (!apiKey) {
       ctx.ui.setStatus(STATUS_KEY, theme.fg("dim", "syn: no key"));
       return;
