@@ -1,8 +1,0 @@
-{
-  "name": "fuzzy-edit",
-  "version": "1.0.0",
-  "description": "Fuzzy edit tool extension for pi with high-confidence matching",
-  "dependencies": {
-    "diff": "^5.1.0"
-  }
-}
