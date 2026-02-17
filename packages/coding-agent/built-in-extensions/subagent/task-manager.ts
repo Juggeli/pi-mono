@@ -16,6 +16,10 @@ import { emptyUsage } from "./types.js";
 export class BackgroundTaskManager {
 	private readonly tasks = new Map<string, TaskState>();
 	private readonly abortControllers = new Map<string, AbortController>();
+	private readonly completionDeferreds = new Map<
+		string,
+		{ promise: Promise<TaskState>; resolve: (state: TaskState) => void }
+	>();
 	private readonly concurrency: ConcurrencyManager;
 	private readonly pi: ExtensionAPI;
 
@@ -44,6 +48,13 @@ export class BackgroundTaskManager {
 
 		this.tasks.set(id, state);
 		this.abortControllers.set(id, abortController);
+
+		// Create a deferred promise for waitAll()
+		let deferredResolve!: (state: TaskState) => void;
+		const deferredPromise = new Promise<TaskState>((resolve) => {
+			deferredResolve = resolve;
+		});
+		this.completionDeferreds.set(id, { promise: deferredPromise, resolve: deferredResolve });
 
 		const modelKey = params.agent.model ?? "default";
 
@@ -86,6 +97,8 @@ export class BackgroundTaskManager {
 			} finally {
 				this.concurrency.release(modelKey);
 				this.abortControllers.delete(id);
+				this.completionDeferreds.get(id)?.resolve(state);
+				this.completionDeferreds.delete(id);
 				this.notifyCompletion(state);
 			}
 		})();
@@ -119,6 +132,27 @@ export class BackgroundTaskManager {
 	/** Get result of a completed task */
 	getResult(id: string): TaskResult | undefined {
 		return this.tasks.get(id)?.result;
+	}
+
+	/** Block until all pending/running background tasks complete */
+	async waitAll(signal?: AbortSignal): Promise<TaskState[]> {
+		const activeDeferreds: Promise<TaskState>[] = [];
+		for (const [id, task] of this.tasks) {
+			if (task.status === "pending" || task.status === "running") {
+				const deferred = this.completionDeferreds.get(id);
+				if (deferred) activeDeferreds.push(deferred.promise);
+			}
+		}
+		if (activeDeferreds.length === 0) return [];
+
+		if (signal) {
+			const abortPromise = new Promise<never>((_, reject) => {
+				signal.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")), { once: true });
+			});
+			return Promise.race([Promise.all(activeDeferreds), abortPromise]);
+		}
+
+		return Promise.all(activeDeferreds);
 	}
 
 	/** Notify the parent session that a background task completed */
