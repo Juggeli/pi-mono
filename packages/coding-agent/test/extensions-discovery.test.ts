@@ -449,6 +449,50 @@ describe("extensions discovery", () => {
 		expect(result.extensions[0].tools.has("discovered")).toBe(false);
 	});
 
+	it("project-local extensions override global extensions with the same filename", async () => {
+		// Global extension registers tool "from-global"
+		fs.writeFileSync(path.join(extensionsDir, "shared.ts"), extensionCodeWithTool("from-global"));
+
+		// Project-local extension with the same filename registers tool "from-local"
+		const projectDir = path.join(tempDir, "project");
+		const localExtDir = path.join(projectDir, ".pi", "extensions");
+		fs.mkdirSync(localExtDir, { recursive: true });
+		fs.writeFileSync(path.join(localExtDir, "shared.ts"), extensionCodeWithTool("from-local"));
+
+		const result = await discoverAndLoadExtensions([], projectDir, tempDir);
+
+		expect(result.errors).toHaveLength(0);
+		expect(result.extensions).toHaveLength(1);
+		expect(result.extensions[0].tools.has("from-local")).toBe(true);
+		expect(result.extensions[0].tools.has("from-global")).toBe(false);
+		expect(result.extensions[0].path).toContain(path.join("project", ".pi", "extensions", "shared.ts"));
+	});
+
+	it("project-local extensions don't affect global extensions with different filenames", async () => {
+		// Global extension
+		fs.writeFileSync(path.join(extensionsDir, "global-only.ts"), extensionCodeWithTool("global-tool"));
+
+		// Project-local extension with a different filename
+		const projectDir = path.join(tempDir, "project");
+		const localExtDir = path.join(projectDir, ".pi", "extensions");
+		fs.mkdirSync(localExtDir, { recursive: true });
+		fs.writeFileSync(path.join(localExtDir, "local-only.ts"), extensionCodeWithTool("local-tool"));
+
+		const result = await discoverAndLoadExtensions([], projectDir, tempDir);
+
+		expect(result.errors).toHaveLength(0);
+		expect(result.extensions).toHaveLength(2);
+
+		const allTools = new Set<string>();
+		for (const ext of result.extensions) {
+			for (const name of ext.tools.keys()) {
+				allTools.add(name);
+			}
+		}
+		expect(allTools.has("global-tool")).toBe(true);
+		expect(allTools.has("local-tool")).toBe(true);
+	});
+
 	it("loadExtensions with no paths loads nothing", async () => {
 		// Create discoverable extensions (would be found by discoverAndLoadExtensions)
 		fs.writeFileSync(path.join(extensionsDir, "discovered.ts"), extensionCode);
