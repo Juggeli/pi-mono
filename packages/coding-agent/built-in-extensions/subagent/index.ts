@@ -9,7 +9,7 @@ import * as os from "node:os";
 import type { Message } from "@mariozechner/pi-ai";
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { type AgentSession, type AgentSessionEvent, getMarkdownTheme } from "@mariozechner/pi-coding-agent";
-import { Container, Markdown, Spacer, Text } from "@mariozechner/pi-tui";
+import { Container, Key, Markdown, Spacer, Text } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
 import { getAgent, listAgents } from "./agents/index.js";
 import { ConcurrencyManager } from "./concurrency.js";
@@ -206,6 +206,111 @@ export default function (pi: ExtensionAPI) {
 		return;
 	}
 
+	// =========================================================================
+	// Primary mode switching
+	// =========================================================================
+
+	const primaryAgents = listAgents("primary");
+	const primaryModeNames = primaryAgents.map((a) => a.name);
+	let activeModeName = primaryModeNames[0] ?? "code";
+
+	function getActiveMode() {
+		return primaryAgents.find((a) => a.name === activeModeName);
+	}
+
+	function updateModeStatus(ctx: import("@mariozechner/pi-coding-agent").ExtensionContext) {
+		const mode = getActiveMode();
+		if (mode) {
+			const displayName = mode.name.charAt(0).toUpperCase() + mode.name.slice(1);
+			ctx.ui.setStatus("mode", ctx.ui.theme.fg("accent", displayName));
+		}
+	}
+
+	function switchMode(name: string, ctx: import("@mariozechner/pi-coding-agent").ExtensionContext): boolean {
+		const mode = primaryAgents.find((a) => a.name === name);
+		if (!mode) {
+			ctx.ui.notify(`Unknown mode: ${name}`, "error");
+			return false;
+		}
+		activeModeName = name;
+		updateModeStatus(ctx);
+		pi.appendEntry("subagent-mode", { activeMode: name });
+		return true;
+	}
+
+	// /mode command
+	pi.registerCommand("mode", {
+		description: "Switch primary agent mode",
+		getArgumentCompletions: (prefix: string) => {
+			return primaryModeNames
+				.filter((name) => name.toLowerCase().startsWith(prefix.toLowerCase()))
+				.map((name) => ({
+					value: name,
+					label: name,
+					description: primaryAgents.find((a) => a.name === name)?.description || "",
+				}));
+		},
+		handler: async (args, ctx) => {
+			const name = args.trim().toLowerCase();
+			if (!name) {
+				const modeList = primaryModeNames
+					.map((n) => {
+						const a = primaryAgents.find((ag) => ag.name === n);
+						const marker = n === activeModeName ? " (active)" : "";
+						return `- ${n}${marker}: ${a?.description || ""}`;
+					})
+					.join("\n");
+				ctx.ui.notify(`Current mode: ${activeModeName}\n\n${modeList}`, "info");
+				return;
+			}
+			if (switchMode(name, ctx)) {
+				ctx.ui.notify(`Switched to ${name} mode`, "info");
+			}
+		},
+	});
+
+	// Alt+M shortcut to cycle modes
+	pi.registerShortcut(Key.alt("m"), {
+		description: "Cycle primary agent mode",
+		handler: async (ctx) => {
+			const currentIndex = primaryModeNames.indexOf(activeModeName);
+			const nextIndex = (currentIndex + 1) % primaryModeNames.length;
+			const nextName = primaryModeNames[nextIndex];
+			if (switchMode(nextName, ctx)) {
+				ctx.ui.notify(`Switched to ${nextName} mode`, "info");
+			}
+		},
+	});
+
+	// Inject system prompt based on active mode
+	pi.on("before_agent_start", async () => {
+		const mode = getActiveMode();
+		if (!mode) return;
+		return { systemPrompt: mode.systemPrompt };
+	});
+
+	// Update status bar on each turn
+	pi.on("turn_start", async (_event, ctx) => {
+		updateModeStatus(ctx);
+	});
+
+	// Restore mode from session on startup
+	pi.on("session_start", async (_event, ctx) => {
+		const entries = ctx.sessionManager.getEntries();
+		const modeEntry = entries
+			.filter((e: { type: string; customType?: string }) => e.type === "custom" && e.customType === "subagent-mode")
+			.pop() as { data?: { activeMode: string } } | undefined;
+
+		if (modeEntry?.data?.activeMode && primaryModeNames.includes(modeEntry.data.activeMode)) {
+			activeModeName = modeEntry.data.activeMode;
+		}
+		updateModeStatus(ctx);
+	});
+
+	// =========================================================================
+	// Subagent tool
+	// =========================================================================
+
 	const concurrency = new ConcurrencyManager(MAX_CONCURRENCY);
 	const taskManager = new BackgroundTaskManager(concurrency, pi);
 
@@ -234,7 +339,7 @@ export default function (pi: ExtensionAPI) {
 		parameters: SubagentParamsSchema,
 
 		async execute(_toolCallId, params, signal, onUpdate, ctx) {
-			const agents = listAgents();
+			const agents = listAgents("subagent");
 
 			// ─── Task management operations ───────────────────────────
 
