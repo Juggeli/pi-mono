@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import askUserExtension from "./index.js";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import askUserExtension from "../built-in-extensions/ask-user.js";
 
 // Mock dependencies
 vi.mock("@mariozechner/pi-tui", () => ({
@@ -35,7 +35,6 @@ interface RegisteredTool {
 }
 
 describe("ask_user extension", () => {
-	// biome-ignore lint/suspicious/noExplicitAny: mock function
 	let mockRegisterTool: any;
 	let registeredTool: RegisteredTool;
 
@@ -179,11 +178,11 @@ describe("ask_user extension", () => {
 				},
 			);
 
-			expect(mockSelect).toHaveBeenCalledWith(
-				"Pick one?",
-				["Option A", "Option B (Recommended)", "Other (type your own)"],
-				{ initialIndex: 1 },
-			);
+			expect(mockSelect).toHaveBeenCalledWith("Pick one?", [
+				"Option A",
+				"Option B (Recommended)",
+				"Other (type your own)",
+			]);
 			expect(result.details.selected).toEqual(["Option B"]);
 			expect(result.details.multi).toBe(false);
 			expect(result.details.cancelled).toBe(false);
@@ -271,7 +270,6 @@ describe("ask_user extension", () => {
 			expect(mockSelect).toHaveBeenCalledWith(
 				"Pick one?",
 				["Option A"], // No "Other" option
-				{ initialIndex: undefined },
 			);
 		});
 	});
@@ -431,7 +429,6 @@ describe("ask_user extension", () => {
 		const createTheme = () => ({
 			bold: (s: string) => `**${s}**`,
 			fg: (color: string, s: string) => `[${color}:${s}]`,
-			tree: { branch: "├─", last: "└─" },
 		});
 
 		it("renders cancelled result", () => {
