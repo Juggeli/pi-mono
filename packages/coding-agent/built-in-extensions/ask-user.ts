@@ -11,7 +11,7 @@
  *   - Offer choices to the user about what direction to take
  */
 
-import type { ExtensionAPI, ExtensionContext } from "@mariozechner/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext, ThemeColor } from "@mariozechner/pi-coding-agent";
 import { Editor, type EditorTheme, Key, matchesKey, Text, truncateToWidth } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
 
@@ -52,7 +52,6 @@ interface MultiSelectResult {
 // =============================================================================
 
 const OTHER_OPTION = "Other (type your own)";
-const DONE_SELECTING = "Done selecting";
 const RECOMMENDED_SUFFIX = " (Recommended)";
 
 // =============================================================================
@@ -93,7 +92,7 @@ function stripRecommendedSuffix(label: string): string {
 // =============================================================================
 
 interface UIContext {
-	select(prompt: string, options: string[], options_?: { initialIndex?: number }): Promise<string | undefined>;
+	select(prompt: string, options: string[]): Promise<string | undefined>;
 	input(prompt: string): Promise<string | undefined>;
 	custom: ExtensionContext["ui"]["custom"];
 }
@@ -112,7 +111,7 @@ async function askSingleQuestion(
 		options.push(OTHER_OPTION);
 	}
 
-	const choice = await ui.select(question, options, { initialIndex: recommended });
+	const choice = await ui.select(question, options);
 
 	if (choice === undefined) {
 		return { selected: [] };
@@ -165,8 +164,8 @@ async function askMultiQuestion(
 				// Filter out "Other" index (last index) and map to labels
 				const otherIndex = allOptionLabels.length - 1;
 				const selectedLabels = Array.from(selected)
-					.filter(idx => idx !== otherIndex)
-					.map(idx => stripRecommendedSuffix(optionLabels[idx]));
+					.filter((idx) => idx !== otherIndex)
+					.map((idx) => stripRecommendedSuffix(optionLabels[idx]));
 				done({ selected: selectedLabels, custom_input: trimmed, cancelled: false });
 			} else {
 				// Empty input, exit input mode
@@ -297,11 +296,11 @@ async function askMultiQuestion(
 
 				const checkbox = isSelected ? theme.fg("success", "[x]") : theme.fg("dim", "[ ]");
 				const cursor = isCursor ? theme.fg("accent", "> ") : "  ";
-				const textColor = isCursor ? "accent" : isSelected ? "success" : "text";
+				const textColor: ThemeColor = isCursor ? "accent" : isSelected ? "success" : "text";
 
 				if (isOther && (inInputMode || isSelected)) {
 					// Show "Other" with editor indicator when editing or selected
-					add(`${cursor}${checkbox} ${theme.fg(textColor, label + " ✎")}`);
+					add(`${cursor}${checkbox} ${theme.fg(textColor, `${label} ✎`)}`);
 				} else {
 					add(`${cursor}${checkbox} ${theme.fg(textColor, label)}`);
 				}
@@ -386,8 +385,8 @@ Use recommended: <index> to mark the default option (0-indexed).`,
 				custom: ctx.ui.custom.bind(ctx.ui),
 			};
 
-			const optionLabels = params.options.map(o => o.label);
-			const descriptions = params.options.map(o => o.description);
+			const optionLabels = params.options.map((o) => o.label);
+			const descriptions = params.options.map((o) => o.description);
 			const multi = params.multi ?? false;
 			const allowOther = params.allow_other !== false;
 
@@ -408,7 +407,10 @@ Use recommended: <index> to mark the default option (0-indexed).`,
 				multi,
 				selected: result.selected,
 				custom_input: result.custom_input,
-				cancelled: "cancelled" in result ? result.cancelled : (result.selected.length === 0 && !result.custom_input),
+				cancelled:
+					"cancelled" in result
+						? (result as MultiSelectResult).cancelled
+						: result.selected.length === 0 && !result.custom_input,
 			};
 
 			// Build response text - show both selections and custom input when present
@@ -425,8 +427,6 @@ Use recommended: <index> to mark the default option (0-indexed).`,
 				responseText = multi
 					? `User selected: ${result.selected.join(", ")}`
 					: `User selected: ${result.selected[0]}`;
-			} else if ("cancelled" in result && result.cancelled) {
-				responseText = "User cancelled the selection";
 			} else {
 				responseText = "User cancelled the selection";
 			}
@@ -443,7 +443,7 @@ Use recommended: <index> to mark the default option (0-indexed).`,
 			const multi = args.multi ?? false;
 			const allowOther = args.allow_other !== false;
 
-			let text = theme.bold("ask_user") + " " + theme.fg("accent", args.question as string);
+			let text = `${theme.bold("ask_user")} ${theme.fg("accent", args.question as string)}`;
 
 			const meta: string[] = [];
 			if (multi) meta.push("multi");
@@ -451,7 +451,7 @@ Use recommended: <index> to mark the default option (0-indexed).`,
 			if (count > 0) meta.push(`${count} options`);
 
 			if (meta.length > 0) {
-				text += " " + theme.fg("dim", `(${meta.join(" · ")})`);
+				text += ` ${theme.fg("dim", `(${meta.join(" · ")})`)}`;
 			}
 
 			return new Text(text, 0, 0);
@@ -470,13 +470,18 @@ Use recommended: <index> to mark the default option (0-indexed).`,
 
 			// Both selections and custom input
 			if (details.selected.length > 0 && details.custom_input) {
-				const lines: string[] = [theme.fg("success", `✓ ${details.selected.length} selected`) + theme.fg("muted", " + custom:")];
+				const lines: string[] = [
+					`${theme.fg("success", `✓ ${details.selected.length} selected`)}${theme.fg("muted", " + custom:")}`,
+				];
 				for (let i = 0; i < details.selected.length; i++) {
-					const isLast = i === details.selected.length - 1;
-					const branch = isLast ? theme.tree.last : theme.tree.branch;
-					lines.push(` ${theme.fg("dim", branch)} ${theme.fg("success", "[x]")} ${theme.fg("accent", details.selected[i])}`);
+					const branch = i === details.selected.length - 1 ? "└─" : "├─";
+					lines.push(
+						` ${theme.fg("dim", branch)} ${theme.fg("success", "[x]")} ${theme.fg("accent", details.selected[i])}`,
+					);
 				}
-				lines.push(` ${theme.fg("dim", theme.tree.last)} ${theme.fg("success", "✎")} ${theme.fg("accent", details.custom_input)}`);
+				lines.push(
+					` ${theme.fg("dim", "└─")} ${theme.fg("success", "✎")} ${theme.fg("accent", details.custom_input)}`,
+				);
 				return new Text(lines.join("\n"), 0, 0);
 			}
 
@@ -496,11 +501,14 @@ Use recommended: <index> to mark the default option (0-indexed).`,
 			// Only selections (multi)
 			if (details.multi) {
 				const lines = details.selected.map((s, i) => {
-					const isLast = i === details.selected.length - 1;
-					const branch = isLast ? theme.tree.last : theme.tree.branch;
+					const branch = i === details.selected.length - 1 ? "└─" : "├─";
 					return ` ${theme.fg("dim", branch)} ${theme.fg("success", "[x]")} ${theme.fg("accent", s)}`;
 				});
-				return new Text(theme.fg("success", `[x] ${details.selected.length} selected`) + "\n" + lines.join("\n"), 0, 0);
+				return new Text(
+					`${theme.fg("success", `[x] ${details.selected.length} selected`)}\n${lines.join("\n")}`,
+					0,
+					0,
+				);
 			}
 
 			// Single selection
