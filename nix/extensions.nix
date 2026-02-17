@@ -12,6 +12,7 @@ stdenv.mkDerivation {
     runHook preInstall
     mkdir -p $out
     cp synthetic.ts tps.ts ask-user.ts exa-tools.ts grep-code-search.ts openrouter.ts $out/
+    cp -r subagent $out/
     runHook postInstall
   '';
 

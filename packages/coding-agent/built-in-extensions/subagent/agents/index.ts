@@ -1,0 +1,36 @@
+/**
+ * Agent registry — built-in agent discovery and lookup.
+ */
+
+import type { AgentConfig, AgentFactory, AgentMode } from "../types.js";
+import { createExploreAgent } from "./explore.js";
+import { createReviewAgent } from "./review.js";
+
+/** All built-in agent factories */
+const BUILTIN_FACTORIES: AgentFactory[] = [createExploreAgent, createReviewAgent];
+
+/** Create and cache the built-in agents map */
+let cachedAgents: Map<string, AgentConfig> | undefined;
+
+export function createBuiltinAgents(): Map<string, AgentConfig> {
+	if (cachedAgents) return cachedAgents;
+
+	cachedAgents = new Map();
+	for (const factory of BUILTIN_FACTORIES) {
+		const config = factory();
+		cachedAgents.set(config.name, config);
+	}
+	return cachedAgents;
+}
+
+/** Get a single agent by name */
+export function getAgent(name: string): AgentConfig | undefined {
+	return createBuiltinAgents().get(name);
+}
+
+/** List agents, optionally filtered by mode */
+export function listAgents(mode?: AgentMode): AgentConfig[] {
+	const agents = Array.from(createBuiltinAgents().values());
+	if (!mode) return agents;
+	return agents.filter((a) => a.mode === mode || a.mode === "all");
+}

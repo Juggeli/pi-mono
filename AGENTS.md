@@ -107,6 +107,14 @@ Use these sections under `## [Unreleased]`:
 - **Internal changes (from issues)**: `Fixed foo bar ([#123](https://github.com/badlogic/pi-mono/issues/123))`
 - **External contributions**: `Added feature X ([#456](https://github.com/badlogic/pi-mono/pull/456) by [@username](https://github.com/username))`
 
+## Custom Extensions
+
+Location: `packages/coding-agent/built-in-extensions/`
+
+This is a forked repo. This directory holds our custom extensions, not upstream ones. Single-file extensions (e.g. `synthetic.ts`) and subdirectory extensions with an `index.ts` entry point (e.g. `subagent/`) live here. The extension loader (`packages/coding-agent/src/core/extensions/loader.ts`) uses `jiti` to load TypeScript files directly, resolving relative imports and virtual modules (`@mariozechner/pi-coding-agent`, `@mariozechner/pi-ai`, `@sinclair/typebox`, `@mariozechner/pi-tui`).
+
+The Nix build (`nix/extensions.nix`) copies these into the output derivation. Flat `.ts` files are copied individually; subdirectories are copied with `cp -r`. When adding a new extension, update the `installPhase` in `nix/extensions.nix` accordingly.
+
 ## Adding a New LLM Provider (packages/ai)
 
 Adding a new provider requires changes across multiple files:
