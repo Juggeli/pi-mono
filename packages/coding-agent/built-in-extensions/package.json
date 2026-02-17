@@ -1,0 +1,14 @@
+{
+  "type": "module",
+  "pi": {
+    "extensions": [
+      "ask-user.ts",
+      "exa-tools.ts",
+      "grep-code-search.ts",
+      "openrouter.ts",
+      "subagent",
+      "synthetic.ts",
+      "tps.ts"
+    ]
+  }
+}

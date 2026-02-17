@@ -23,8 +23,8 @@
           pkgs = nixpkgs.legacyPackages.${system};
         in
         {
-          pi = pkgs.callPackage ./nix/pi.nix { };
           pi-extensions = pkgs.callPackage ./nix/extensions.nix { };
+          pi = pkgs.callPackage ./nix/pi.nix { piExtensions = self.packages.${system}.pi-extensions; };
           default = self.packages.${system}.pi;
         }
       );
