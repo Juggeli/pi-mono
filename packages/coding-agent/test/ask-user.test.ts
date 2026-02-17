@@ -28,6 +28,8 @@ interface RegisteredTool {
 	name: string;
 	label: string;
 	description: string;
+	shortDescription?: string;
+	systemGuidelines?: string[];
 	parameters: unknown;
 	execute: (...args: unknown[]) => Promise<ToolResult>;
 	renderCall: (...args: unknown[]) => { text: string };
@@ -61,6 +63,18 @@ describe("ask_user extension", () => {
 			expect(registeredTool.description).toContain("Ask the user a question");
 			expect(registeredTool.description).toContain("multi");
 			expect(registeredTool.description).toContain("recommended");
+		});
+
+		it("has a shortDescription for system prompt", () => {
+			expect(registeredTool.shortDescription).toBe("Ask the user a question with selectable options");
+		});
+
+		it("has systemGuidelines", () => {
+			expect(registeredTool.systemGuidelines).toBeDefined();
+			expect(registeredTool.systemGuidelines!.length).toBeGreaterThan(0);
+			expect(registeredTool.systemGuidelines).toContain(
+				"Use ask_user when you need user input to proceed rather than guessing or making assumptions",
+			);
 		});
 	});
 
