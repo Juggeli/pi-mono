@@ -193,6 +193,7 @@ const SubagentParamsSchema = Type.Object({
 	checkTask: Type.Optional(Type.String({ description: "Get status/result of background task" })),
 	abortTask: Type.Optional(Type.String({ description: "Abort a background task" })),
 	listTasks: Type.Optional(Type.Boolean({ description: "List all active/completed tasks" })),
+	waitTasks: Type.Optional(Type.Boolean({ description: "Block until all background tasks complete, return results" })),
 });
 
 // =============================================================================
@@ -228,6 +229,7 @@ export default function (pi: ExtensionAPI) {
 			"  • checkTask: get status/result of background task",
 			"  • abortTask: abort a background task",
 			"  • listTasks: list all background tasks",
+			"  • waitTasks: block until all background tasks complete",
 		].join("\n"),
 		parameters: SubagentParamsSchema,
 
@@ -289,6 +291,26 @@ export default function (pi: ExtensionAPI) {
 				});
 				return {
 					content: [{ type: "text", text: `Background tasks:\n\n${lines.join("\n")}` }],
+					details: { mode: "taskStatus", results: [] } as SubagentDetails,
+				};
+			}
+
+			if (params.waitTasks) {
+				const completedTasks = await taskManager.waitAll(signal);
+				if (completedTasks.length === 0) {
+					return {
+						content: [{ type: "text", text: "No active background tasks to wait for." }],
+						details: { mode: "taskStatus", results: [] } as SubagentDetails,
+					};
+				}
+				const lines = completedTasks.map((t) => {
+					const elapsed = t.completedAt
+						? `${((t.completedAt - t.startedAt) / 1000).toFixed(1)}s`
+						: `${((Date.now() - t.startedAt) / 1000).toFixed(1)}s...`;
+					return `- ${t.id} [${t.agent}] ${t.status} (${elapsed}): ${t.description.slice(0, 80)}`;
+				});
+				return {
+					content: [{ type: "text", text: `All background tasks completed:\n\n${lines.join("\n")}` }],
 					details: { mode: "taskStatus", results: [] } as SubagentDetails,
 				};
 			}
@@ -660,6 +682,9 @@ export default function (pi: ExtensionAPI) {
 			}
 			if (args.listTasks) {
 				return new Text(theme.fg("toolTitle", theme.bold("subagent ")) + theme.fg("accent", "list tasks"), 0, 0);
+			}
+			if (args.waitTasks) {
+				return new Text(theme.fg("toolTitle", theme.bold("subagent ")) + theme.fg("accent", "wait tasks"), 0, 0);
 			}
 
 			const isResume =
