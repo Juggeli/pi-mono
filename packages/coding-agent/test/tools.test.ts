@@ -52,9 +52,9 @@ describe("Coding Agent Tools", () => {
 
 			// Verify hashline format: each line starts with LINE:HASH|
 			const lines = output.split("\n");
-			expect(lines[0]).toMatch(/^1:[0-9a-f]{2}\|Hello, world!$/);
-			expect(lines[1]).toMatch(/^2:[0-9a-f]{2}\|Line 2$/);
-			expect(lines[2]).toMatch(/^3:[0-9a-f]{2}\|Line 3$/);
+			expect(lines[0]).toMatch(/^1:[0-9a-f]{8}\|Hello, world!$/);
+			expect(lines[1]).toMatch(/^2:[0-9a-f]{8}\|Line 2$/);
+			expect(lines[2]).toMatch(/^3:[0-9a-f]{8}\|Line 3$/);
 			// No truncation message since file fits within limits
 			expect(output).not.toContain("Use offset=");
 			expect(result.details).toBeUndefined();
@@ -75,7 +75,7 @@ describe("Coding Agent Tools", () => {
 			const output = getTextOutput(result);
 
 			// Should have hashline-prefixed lines
-			expect(output).toMatch(/^1:[0-9a-f]{2}\|Line 1$/m);
+			expect(output).toMatch(/^1:[0-9a-f]{8}\|Line 1$/m);
 			expect(output).not.toContain("Line 2001");
 			expect(output).toContain("[Showing lines 1-2000 of 2500. Use offset=2001 to continue.]");
 		});
@@ -89,7 +89,7 @@ describe("Coding Agent Tools", () => {
 			const result = await readTool.execute("test-call-4", { path: testFile });
 			const output = getTextOutput(result);
 
-			expect(output).toMatch(/^1:[0-9a-f]{2}\|Line 1:/m);
+			expect(output).toMatch(/^1:[0-9a-f]{8}\|Line 1:/m);
 			// Should show byte limit message
 			expect(output).toMatch(/\[Showing lines 1-\d+ of 500 \(.* limit\)\. Use offset=\d+ to continue\.\]/);
 		});
@@ -104,8 +104,8 @@ describe("Coding Agent Tools", () => {
 
 			expect(output).not.toContain("Line 50");
 			// Lines should be numbered starting at 51
-			expect(output).toMatch(/^51:[0-9a-f]{2}\|Line 51$/m);
-			expect(output).toMatch(/^100:[0-9a-f]{2}\|Line 100$/m);
+			expect(output).toMatch(/^51:[0-9a-f]{8}\|Line 51$/m);
+			expect(output).toMatch(/^100:[0-9a-f]{8}\|Line 100$/m);
 			expect(output).not.toContain("Use offset=");
 		});
 
@@ -117,8 +117,8 @@ describe("Coding Agent Tools", () => {
 			const result = await readTool.execute("test-call-6", { path: testFile, limit: 10 });
 			const output = getTextOutput(result);
 
-			expect(output).toMatch(/^1:[0-9a-f]{2}\|Line 1$/m);
-			expect(output).toMatch(/^10:[0-9a-f]{2}\|Line 10$/m);
+			expect(output).toMatch(/^1:[0-9a-f]{8}\|Line 1$/m);
+			expect(output).toMatch(/^10:[0-9a-f]{8}\|Line 10$/m);
 			expect(output).not.toContain("Line 11");
 			expect(output).toContain("[90 more lines in file. Use offset=11 to continue.]");
 		});
@@ -136,8 +136,8 @@ describe("Coding Agent Tools", () => {
 			const output = getTextOutput(result);
 
 			expect(output).not.toContain("Line 40");
-			expect(output).toMatch(/^41:[0-9a-f]{2}\|Line 41$/m);
-			expect(output).toMatch(/^60:[0-9a-f]{2}\|Line 60$/m);
+			expect(output).toMatch(/^41:[0-9a-f]{8}\|Line 41$/m);
+			expect(output).toMatch(/^60:[0-9a-f]{8}\|Line 60$/m);
 			expect(output).not.toContain("Line 61");
 			expect(output).toContain("[40 more lines in file. Use offset=61 to continue.]");
 		});
@@ -194,7 +194,7 @@ describe("Coding Agent Tools", () => {
 			const output = getTextOutput(result);
 
 			// Content should be in hashline format
-			expect(output).toMatch(/^1:[0-9a-f]{2}\|definitely not a png$/);
+			expect(output).toMatch(/^1:[0-9a-f]{8}\|definitely not a png$/);
 			expect(result.content.some((c: any) => c.type === "image")).toBe(false);
 		});
 	});
@@ -290,7 +290,7 @@ describe("Coding Agent Tools", () => {
 
 			// Compute the actual hash, then use a different valid hash
 			const actualHash = computeLineHash(1, "actual content");
-			const wrongHash = actualHash === "00" ? "01" : "00";
+			const wrongHash = actualHash === "00000000" ? "00000001" : "00000000";
 
 			await expect(
 				editTool.execute("test-call-wrong-hash", {
