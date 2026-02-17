@@ -3,11 +3,18 @@
  */
 
 import type { AgentConfig, AgentFactory, AgentMode } from "../types.js";
+import { createCodeAgent } from "./code.js";
 import { createExploreAgent } from "./explore.js";
+import { createPrometheusAgent } from "./prometheus.js";
 import { createReviewAgent } from "./review.js";
 
 /** All built-in agent factories */
-const BUILTIN_FACTORIES: AgentFactory[] = [createExploreAgent, createReviewAgent];
+const BUILTIN_FACTORIES: AgentFactory[] = [
+	createCodeAgent,
+	createExploreAgent,
+	createPrometheusAgent,
+	createReviewAgent,
+];
 
 /** Create and cache the built-in agents map */
 let cachedAgents: Map<string, AgentConfig> | undefined;

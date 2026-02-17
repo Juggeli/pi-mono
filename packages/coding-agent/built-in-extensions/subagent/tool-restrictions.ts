@@ -38,6 +38,12 @@ export const REVIEW_RESTRICTIONS: AgentToolRestrictions = {
 	edit: false,
 };
 
+/** Restrictions for the prometheus agent — read-only but keeps subagent access */
+export const PROMETHEUS_RESTRICTIONS: AgentToolRestrictions = {
+	write: false,
+	edit: false,
+};
+
 /** All individual tool creators keyed by name */
 const TOOL_CREATORS: Record<string, ToolCreator> = {
 	read: (cwd) => createReadTool(cwd),
