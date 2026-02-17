@@ -362,6 +362,11 @@ export default function (pi: ExtensionAPI) {
 The user can select "Other" to type a custom answer inline.
 Use multi: true to allow multiple selections (space toggles, enter confirms).
 Use recommended: <index> to mark the default option (0-indexed).`,
+		shortDescription: "Ask the user a question with selectable options",
+		systemGuidelines: [
+			"Use ask_user when you need user input to proceed rather than guessing or making assumptions",
+			"Prefer ask_user over open-ended text prompts when there are clear options to choose from",
+		],
 		parameters: AskUserParams,
 
 		async execute(
