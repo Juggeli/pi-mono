@@ -5,6 +5,7 @@ import { constants } from "fs";
 import { access as fsAccess, readFile as fsReadFile } from "fs/promises";
 import { formatDimensionNote, resizeImage } from "../../utils/image-resize.js";
 import { detectSupportedImageMimeTypeFromFile } from "../../utils/mime.js";
+import { formatHashLines } from "./hashline.js";
 import { resolveReadPath } from "./path-utils.js";
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize, type TruncationResult, truncateHead } from "./truncate.js";
 
@@ -152,8 +153,11 @@ export function createReadTool(cwd: string, options?: ReadToolOptions): AgentToo
 									selectedContent = allLines.slice(startLine).join("\n");
 								}
 
+								// Transform to hashline format (LINE:HASH|content)
+								const hashlineContent = formatHashLines(selectedContent, startLineDisplay);
+
 								// Apply truncation (respects both line and byte limits)
-								const truncation = truncateHead(selectedContent);
+								const truncation = truncateHead(hashlineContent);
 
 								let outputText: string;
 

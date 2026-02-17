@@ -33,6 +33,21 @@ export {
 	grepTool,
 } from "./grep.js";
 export {
+	applyHashlineEdits,
+	computeLineHash,
+	formatHashLine,
+	formatHashLines,
+	HASH_DICT,
+	HASHLINE_PATTERN,
+	type HashlineEdit,
+	type InsertAfterEdit,
+	type LineRef,
+	parseLineRef,
+	type ReplaceLinesEdit,
+	type SetLineEdit,
+	validateLineRef,
+} from "./hashline.js";
+export {
 	createLsTool,
 	type LsOperations,
 	type LsToolDetails,
