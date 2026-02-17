@@ -4,7 +4,7 @@ stdenv.mkDerivation {
   pname = "pi-extensions";
   version = "0.52.12";
 
-  src = ../.pi/extensions;
+  src = ../packages/coding-agent/built-in-extensions;
 
   dontBuild = true;
 
