@@ -2,21 +2,34 @@ import type { AgentTool } from "@mariozechner/pi-agent-core";
 import { type Static, Type } from "@sinclair/typebox";
 import { constants } from "fs";
 import { access as fsAccess, readFile as fsReadFile, writeFile as fsWriteFile } from "fs/promises";
-import {
-	detectLineEnding,
-	fuzzyFindText,
-	generateDiffString,
-	normalizeForFuzzyMatch,
-	normalizeToLF,
-	restoreLineEndings,
-	stripBom,
-} from "./edit-diff.js";
+import { detectLineEnding, generateDiffString, normalizeToLF, restoreLineEndings, stripBom } from "./edit-diff.js";
+import { applyHashlineEdits, type HashlineEdit } from "./hashline.js";
 import { resolveToCwd } from "./path-utils.js";
+
+const SetLineSchema = Type.Object({
+	type: Type.Literal("set_line"),
+	line: Type.String({ description: 'Line reference in LINE:HASH format (e.g., "5:a3")' }),
+	text: Type.String({ description: "New content for the line" }),
+});
+
+const ReplaceLinesSchema = Type.Object({
+	type: Type.Literal("replace_lines"),
+	start_line: Type.String({ description: "Start line in LINE:HASH format" }),
+	end_line: Type.String({ description: "End line in LINE:HASH format" }),
+	text: Type.String({ description: "New content to replace the range (use \\n for newlines)" }),
+});
+
+const InsertAfterSchema = Type.Object({
+	type: Type.Literal("insert_after"),
+	line: Type.String({ description: "Line reference in LINE:HASH format" }),
+	text: Type.String({ description: "Content to insert after the line (use \\n for newlines)" }),
+});
 
 const editSchema = Type.Object({
 	path: Type.String({ description: "Path to the file to edit (relative or absolute)" }),
-	oldText: Type.String({ description: "Exact text to find and replace (must match exactly)" }),
-	newText: Type.String({ description: "New text to replace the old text with" }),
+	edits: Type.Array(Type.Union([SetLineSchema, ReplaceLinesSchema, InsertAfterSchema]), {
+		description: "Array of edit operations to apply",
+	}),
 });
 
 export type EditToolInput = Static<typeof editSchema>;
@@ -58,12 +71,41 @@ export function createEditTool(cwd: string, options?: EditToolOptions): AgentToo
 	return {
 		name: "edit",
 		label: "edit",
-		description:
-			"Edit a file by replacing exact text. The oldText must match exactly (including whitespace). Use this for precise, surgical edits.",
+		description: `Edit files using LINE:HASH references for precise, safe modifications.
+
+LINE:HASH FORMAT:
+Each line reference must be in "LINE:HASH" format where:
+- LINE: 1-based line number
+- HASH: 2-character hex hash of line content
+- Example: "5:a3" means line 5 with hash "a3"
+
+GETTING HASHES:
+Use the read tool first - it returns lines in "LINE:HASH|content" format.
+
+THREE OPERATION TYPES:
+
+1. set_line: Replace a single line
+   { "type": "set_line", "line": "5:a3", "text": "const y = 2" }
+
+2. replace_lines: Replace a range of lines (inclusive)
+   { "type": "replace_lines", "start_line": "5:a3", "end_line": "7:b2", "text": "new\\ncontent" }
+
+3. insert_after: Insert new lines after a specific line
+   { "type": "insert_after", "line": "5:a3", "text": "console.log('hi')" }
+
+HASH MISMATCH HANDLING:
+If the hash doesn't match the current content, the edit fails with a clear error showing current hash.
+Re-read the file to get updated hashes.
+
+BOTTOM-UP APPLICATION:
+Edits are automatically sorted and applied from bottom to top (highest line numbers first) to preserve line number references.
+
+ESCAPING:
+Use \\n in text fields to represent literal newlines (for multi-line replacements/insertions).`,
 		parameters: editSchema,
 		execute: async (
 			_toolCallId: string,
-			{ path, oldText, newText }: { path: string; oldText: string; newText: string },
+			{ path, edits }: { path: string; edits: HashlineEdit[] },
 			signal?: AbortSignal,
 		) => {
 			const absolutePath = resolveToCwd(path, cwd);
@@ -118,69 +160,26 @@ export function createEditTool(cwd: string, options?: EditToolOptions): AgentToo
 							return;
 						}
 
-						// Strip BOM before matching (LLM won't include invisible BOM in oldText)
+						// Strip BOM before matching
 						const { bom, text: content } = stripBom(rawContent);
 
 						const originalEnding = detectLineEnding(content);
 						const normalizedContent = normalizeToLF(content);
-						const normalizedOldText = normalizeToLF(oldText);
-						const normalizedNewText = normalizeToLF(newText);
 
-						// Find the old text using fuzzy matching (tries exact match first, then fuzzy)
-						const matchResult = fuzzyFindText(normalizedContent, normalizedOldText);
+						// Apply hashline edits
+						const newContent = applyHashlineEdits(normalizedContent, edits);
 
-						if (!matchResult.found) {
+						// Verify the replacement actually changed something
+						if (normalizedContent === newContent) {
 							if (signal) {
 								signal.removeEventListener("abort", onAbort);
 							}
-							reject(
-								new Error(
-									`Could not find the exact text in ${path}. The old text must match exactly including all whitespace and newlines.`,
-								),
-							);
-							return;
-						}
-
-						// Count occurrences using fuzzy-normalized content for consistency
-						const fuzzyContent = normalizeForFuzzyMatch(normalizedContent);
-						const fuzzyOldText = normalizeForFuzzyMatch(normalizedOldText);
-						const occurrences = fuzzyContent.split(fuzzyOldText).length - 1;
-
-						if (occurrences > 1) {
-							if (signal) {
-								signal.removeEventListener("abort", onAbort);
-							}
-							reject(
-								new Error(
-									`Found ${occurrences} occurrences of the text in ${path}. The text must be unique. Please provide more context to make it unique.`,
-								),
-							);
+							reject(new Error(`No changes made to ${path}. The edits produced identical content.`));
 							return;
 						}
 
 						// Check if aborted before writing
 						if (aborted) {
-							return;
-						}
-
-						// Perform replacement using the matched text position
-						// When fuzzy matching was used, contentForReplacement is the normalized version
-						const baseContent = matchResult.contentForReplacement;
-						const newContent =
-							baseContent.substring(0, matchResult.index) +
-							normalizedNewText +
-							baseContent.substring(matchResult.index + matchResult.matchLength);
-
-						// Verify the replacement actually changed something
-						if (baseContent === newContent) {
-							if (signal) {
-								signal.removeEventListener("abort", onAbort);
-							}
-							reject(
-								new Error(
-									`No changes made to ${path}. The replacement produced identical content. This might indicate an issue with special characters or the text not existing as expected.`,
-								),
-							);
 							return;
 						}
 
@@ -197,12 +196,12 @@ export function createEditTool(cwd: string, options?: EditToolOptions): AgentToo
 							signal.removeEventListener("abort", onAbort);
 						}
 
-						const diffResult = generateDiffString(baseContent, newContent);
+						const diffResult = generateDiffString(normalizedContent, newContent);
 						resolve({
 							content: [
 								{
 									type: "text",
-									text: `Successfully replaced text in ${path}.`,
+									text: `Successfully applied ${edits.length} edit(s) to ${path}.`,
 								},
 							],
 							details: { diff: diffResult.diff, firstChangedLine: diffResult.firstChangedLine },

@@ -6,6 +6,7 @@
 import * as Diff from "diff";
 import { constants } from "fs";
 import { access, readFile } from "fs/promises";
+import { applyHashlineEdits, type HashlineEdit } from "./hashline.js";
 import { resolveToCwd } from "./path-utils.js";
 
 export function detectLineEnding(content: string): "\r\n" | "\n" {
@@ -241,8 +242,7 @@ export interface EditDiffError {
  */
 export async function computeEditDiff(
 	path: string,
-	oldText: string,
-	newText: string,
+	edits: HashlineEdit[],
 	cwd: string,
 ): Promise<EditDiffResult | EditDiffError> {
 	const absolutePath = resolveToCwd(path, cwd);
@@ -258,50 +258,23 @@ export async function computeEditDiff(
 		// Read the file
 		const rawContent = await readFile(absolutePath, "utf-8");
 
-		// Strip BOM before matching (LLM won't include invisible BOM in oldText)
+		// Strip BOM before matching
 		const { text: content } = stripBom(rawContent);
 
 		const normalizedContent = normalizeToLF(content);
-		const normalizedOldText = normalizeToLF(oldText);
-		const normalizedNewText = normalizeToLF(newText);
 
-		// Find the old text using fuzzy matching (tries exact match first, then fuzzy)
-		const matchResult = fuzzyFindText(normalizedContent, normalizedOldText);
-
-		if (!matchResult.found) {
-			return {
-				error: `Could not find the exact text in ${path}. The old text must match exactly including all whitespace and newlines.`,
-			};
-		}
-
-		// Count occurrences using fuzzy-normalized content for consistency
-		const fuzzyContent = normalizeForFuzzyMatch(normalizedContent);
-		const fuzzyOldText = normalizeForFuzzyMatch(normalizedOldText);
-		const occurrences = fuzzyContent.split(fuzzyOldText).length - 1;
-
-		if (occurrences > 1) {
-			return {
-				error: `Found ${occurrences} occurrences of the text in ${path}. The text must be unique. Please provide more context to make it unique.`,
-			};
-		}
-
-		// Compute the new content using the matched position
-		// When fuzzy matching was used, contentForReplacement is the normalized version
-		const baseContent = matchResult.contentForReplacement;
-		const newContent =
-			baseContent.substring(0, matchResult.index) +
-			normalizedNewText +
-			baseContent.substring(matchResult.index + matchResult.matchLength);
+		// Apply hashline edits
+		const newContent = applyHashlineEdits(normalizedContent, edits);
 
 		// Check if it would actually change anything
-		if (baseContent === newContent) {
+		if (normalizedContent === newContent) {
 			return {
-				error: `No changes would be made to ${path}. The replacement produces identical content.`,
+				error: `No changes would be made to ${path}. The edits produce identical content.`,
 			};
 		}
 
 		// Generate the diff
-		return generateDiffString(baseContent, newContent);
+		return generateDiffString(normalizedContent, newContent);
 	} catch (err) {
 		return { error: err instanceof Error ? err.message : String(err) };
 	}
