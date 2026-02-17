@@ -443,9 +443,11 @@ function getBuiltinThemes(): Record<string, ThemeJson> {
 		const themesDir = getThemesDir();
 		const darkPath = path.join(themesDir, "dark.json");
 		const lightPath = path.join(themesDir, "light.json");
+		const catppuccinMochaPath = path.join(themesDir, "catppuccin-mocha.json");
 		BUILTIN_THEMES = {
 			dark: JSON.parse(fs.readFileSync(darkPath, "utf-8")) as ThemeJson,
 			light: JSON.parse(fs.readFileSync(lightPath, "utf-8")) as ThemeJson,
+			"catppuccin-mocha": JSON.parse(fs.readFileSync(catppuccinMochaPath, "utf-8")) as ThemeJson,
 		};
 	}
 	return BUILTIN_THEMES;
