@@ -11,7 +11,7 @@ stdenv.mkDerivation {
   installPhase = ''
     runHook preInstall
     mkdir -p $out
-    cp synthetic.ts tps.ts ask-user.ts exa-tools.ts $out/
+    cp synthetic.ts tps.ts ask-user.ts exa-tools.ts grep-code-search.ts $out/
     runHook postInstall
   '';
 
