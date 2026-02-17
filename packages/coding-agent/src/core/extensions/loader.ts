@@ -489,11 +489,25 @@ export async function discoverAndLoadExtensions(
 ): Promise<LoadExtensionsResult> {
 	const allPaths: string[] = [];
 	const seen = new Set<string>();
+	const seenBasenames = new Map<string, number>(); // basename -> index in allPaths
 
-	const addPaths = (paths: string[]) => {
+	const addPaths = (paths: string[], overrideByBasename = false) => {
 		for (const p of paths) {
 			const resolved = path.resolve(p);
-			if (!seen.has(resolved)) {
+			if (seen.has(resolved)) {
+				continue;
+			}
+			const basename = path.basename(p);
+			const existingIndex = seenBasenames.get(basename);
+			if (overrideByBasename && existingIndex !== undefined) {
+				// Project-local overrides global with the same filename
+				seen.delete(path.resolve(allPaths[existingIndex]!));
+				allPaths[existingIndex] = p;
+				seen.add(resolved);
+			} else {
+				if (existingIndex === undefined) {
+					seenBasenames.set(basename, allPaths.length);
+				}
 				seen.add(resolved);
 				allPaths.push(p);
 			}
@@ -501,8 +515,9 @@ export async function discoverAndLoadExtensions(
 	};
 
 	// 1. Project-local extensions: cwd/.pi/extensions/
+	//    Override global extensions with the same filename.
 	const localExtDir = path.join(cwd, ".pi", "extensions");
-	addPaths(discoverExtensionsInDir(localExtDir));
+	addPaths(discoverExtensionsInDir(localExtDir), true);
 
 	// 2. Global extensions: agentDir/extensions/
 	const globalExtDir = path.join(agentDir, "extensions");
