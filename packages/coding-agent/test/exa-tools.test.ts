@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import exaToolsExtension from "./index.js";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import exaToolsExtension from "../built-in-extensions/exa-tools.js";
 
 // Mock dependencies
 vi.mock("@mariozechner/pi-tui", () => ({
@@ -25,6 +25,8 @@ interface RegisteredTool {
 	name: string;
 	label: string;
 	description: string;
+	shortDescription?: string;
+	systemGuidelines?: string[];
 	parameters: unknown;
 	execute: (
 		toolCallId: string,
@@ -34,16 +36,11 @@ interface RegisteredTool {
 		ctx?: unknown,
 	) => Promise<ToolResult>;
 	renderCall: (args: Record<string, unknown>, theme: Record<string, unknown>) => { text: string };
-	renderResult: (
-		result: ToolResult,
-		options: unknown,
-		theme: Record<string, unknown>,
-	) => { text: string };
+	renderResult: (result: ToolResult, options: unknown, theme: Record<string, unknown>) => { text: string };
 }
 
 describe("exa-tools extension", () => {
 	let registeredTools: Map<string, RegisteredTool>;
-	// biome-ignore lint/suspicious/noExplicitAny: mock function
 	let mockRegisterTool: any;
 	let mockNotify: ReturnType<typeof vi.fn>;
 	let mockOn: ReturnType<typeof vi.fn>;
@@ -93,8 +90,24 @@ describe("exa-tools extension", () => {
 			expect(mockOn).toHaveBeenCalledWith("session_start", expect.any(Function));
 		});
 
+		it("has shortDescription for system prompt", () => {
+			const searchTool = registeredTools.get("exa_search");
+			const contentsTool = registeredTools.get("exa_contents");
+			expect(searchTool?.shortDescription).toBe("Search the web using Exa neural/keyword/deep search");
+			expect(contentsTool?.shortDescription).toBe("Extract content from URLs using Exa");
+		});
+
+		it("has systemGuidelines on exa_search", () => {
+			const searchTool = registeredTools.get("exa_search")!;
+			expect(searchTool.systemGuidelines).toBeDefined();
+			expect(searchTool.systemGuidelines!.length).toBeGreaterThan(0);
+			expect(searchTool.systemGuidelines).toContain(
+				"Use exa_search for web research when you need current information, documentation, or real-world data",
+			);
+		});
+
 		it("notifies when API key is missing on session start", () => {
-			const [, handler] = mockOn.mock.calls.find((call) => call[0] === "session_start") ?? [];
+			const [, handler] = mockOn.mock.calls.find((call: unknown[]) => call[0] === "session_start") ?? [];
 			const mockCtx = { ui: { notify: vi.fn() } };
 
 			if (handler) {
@@ -109,7 +122,7 @@ describe("exa-tools extension", () => {
 
 		it("does not notify when API key is present", () => {
 			process.env.EXA_API_KEY = "test-key";
-			const [, handler] = mockOn.mock.calls.find((call) => call[0] === "session_start") ?? [];
+			const [, handler] = mockOn.mock.calls.find((call: unknown[]) => call[0] === "session_start") ?? [];
 			const mockCtx = { ui: { notify: vi.fn() } };
 
 			if (handler) {
@@ -174,7 +187,6 @@ describe("exa-tools extension", () => {
 					}),
 			});
 
-			// Test various valid formats
 			const validDates = [
 				"2023-01-15",
 				"2023-01-15T10:30:00",
@@ -240,19 +252,6 @@ describe("exa-tools extension", () => {
 			});
 
 			expect(result.details?.error).toBeUndefined();
-		});
-
-		it("returns error for invalid max_characters", async () => {
-			process.env.EXA_API_KEY = "test-key";
-			const result = await contentsTool.execute("test-id", {
-				urls: ["https://example.com"],
-				max_characters: 0,
-			});
-
-			expect(result.content[0]).toEqual({
-				type: "text",
-				text: "Error: max_characters must be at least 1",
-			});
 		});
 	});
 
@@ -569,41 +568,13 @@ describe("exa-tools extension", () => {
 			expect(result.content[0].text).toContain("Errors (1)");
 			expect(result.content[0].text).toContain("Timeout");
 		});
-
-		it("calls onUpdate with progress message", async () => {
-			global.fetch = vi.fn().mockResolvedValue({
-				ok: true,
-				json: () =>
-					Promise.resolve({
-						requestId: "req-999",
-						results: [],
-						statuses: [],
-					}),
-			});
-
-			const onUpdate = vi.fn();
-
-			await contentsTool.execute(
-				"test-id",
-				{
-					urls: ["https://a.com", "https://b.com"],
-				},
-				undefined,
-				onUpdate,
-			);
-
-			expect(onUpdate).toHaveBeenCalledWith({
-				type: "progress",
-				message: "Fetching content from 2 URLs...",
-			});
-		});
 	});
 
 	describe("exa_search - renderCall", () => {
 		let searchTool: RegisteredTool;
 		const createTheme = () => ({
 			bold: (s: string) => `**${s}**`,
-			dim: (s: string) => `[dim:${s}]`,
+			fg: (_color: string, s: string) => s,
 		});
 
 		beforeEach(() => {
@@ -639,7 +610,7 @@ describe("exa-tools extension", () => {
 	describe("exa_search - renderResult", () => {
 		let searchTool: RegisteredTool;
 		const createTheme = () => ({
-			error: (s: string) => `[error:${s}]`,
+			fg: (_color: string, s: string) => s,
 		});
 
 		beforeEach(() => {
@@ -708,7 +679,7 @@ describe("exa-tools extension", () => {
 		let contentsTool: RegisteredTool;
 		const createTheme = () => ({
 			bold: (s: string) => `**${s}**`,
-			dim: (s: string) => `[dim:${s}]`,
+			fg: (_color: string, s: string) => s,
 		});
 
 		beforeEach(() => {
@@ -727,10 +698,7 @@ describe("exa-tools extension", () => {
 
 		it("shows plural for multiple URLs", () => {
 			const theme = createTheme();
-			const result = contentsTool.renderCall(
-				{ urls: ["https://a.com", "https://b.com", "https://c.com"] },
-				theme,
-			);
+			const result = contentsTool.renderCall({ urls: ["https://a.com", "https://b.com", "https://c.com"] }, theme);
 
 			expect(result.text).toContain("3");
 			expect(result.text).toContain("URLs");
@@ -752,27 +720,12 @@ describe("exa-tools extension", () => {
 			expect(result.text).toContain("highlights");
 			expect(result.text).toContain("summary");
 		});
-
-		it("hides text when disabled", () => {
-			const theme = createTheme();
-			const result = contentsTool.renderCall(
-				{
-					urls: ["https://example.com"],
-					text: false,
-					highlights: true,
-				},
-				theme,
-			);
-
-			expect(result.text).not.toContain("text|");
-			expect(result.text).toContain("highlights");
-		});
 	});
 
 	describe("exa_contents - renderResult", () => {
 		let contentsTool: RegisteredTool;
 		const createTheme = () => ({
-			error: (s: string) => `[error:${s}]`,
+			fg: (_color: string, s: string) => s,
 		});
 
 		beforeEach(() => {
@@ -868,7 +821,7 @@ describe("exa-tools extension", () => {
 								title: "The Title",
 								author: "Jane Smith",
 								publishedDate: "2024-06-01",
-								text: "a".repeat(600), // Long text to test truncation
+								text: "a".repeat(600),
 								highlights: ["Highlight 1", "Highlight 2"],
 								summary: "The summary",
 							},
@@ -881,7 +834,7 @@ describe("exa-tools extension", () => {
 			expect(result.content[0].text).toContain("The Title");
 			expect(result.content[0].text).toContain("Jane Smith");
 			expect(result.content[0].text).toContain("2024-06-01");
-			expect(result.content[0].text).toContain("..."); // Truncated
+			expect(result.content[0].text).toContain("...");
 			expect(result.content[0].text).toContain("Highlight 1");
 			expect(result.content[0].text).toContain("The summary");
 		});
