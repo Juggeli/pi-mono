@@ -7,6 +7,7 @@
   stdenv,
   fd,
   ripgrep,
+  piExtensions,
 }:
 
 buildNpmPackage {
@@ -81,9 +82,12 @@ buildNpmPackage {
     cp -r packages/coding-agent/docs $out/lib/pi/
     cp -r packages/coding-agent/examples $out/lib/pi/
 
+    cp -r ${piExtensions} $out/lib/pi/extensions
+
     makeWrapper $out/lib/pi/pi $out/bin/pi \
       --prefix PATH : ${lib.makeBinPath [ fd ripgrep ]} \
-      --set PI_SKIP_VERSION_CHECK 1
+      --set PI_SKIP_VERSION_CHECK 1 \
+      --add-flags "-e $out/lib/pi/extensions"
 
     runHook postInstall
   '';
