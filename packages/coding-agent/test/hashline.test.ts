@@ -23,10 +23,10 @@ describe("hashline", () => {
 		});
 
 		it("HASHLINE_PATTERN matches valid hashline format", () => {
-			const match = "42:a3|const x = 1".match(HASHLINE_PATTERN);
+			const match = "42:a3f1c2d4|const x = 1".match(HASHLINE_PATTERN);
 			expect(match).not.toBeNull();
 			expect(match![1]).toBe("42");
-			expect(match![2]).toBe("a3");
+			expect(match![2]).toBe("a3f1c2d4");
 			expect(match![3]).toBe("const x = 1");
 		});
 
@@ -37,9 +37,9 @@ describe("hashline", () => {
 	});
 
 	describe("computeLineHash", () => {
-		it("returns a 2-char hex string", () => {
+		it("returns an 8-char hex string", () => {
 			const hash = computeLineHash(1, "hello world");
-			expect(hash).toMatch(/^[0-9a-f]{2}$/);
+			expect(hash).toMatch(/^[0-9a-f]{8}$/);
 		});
 
 		it("is deterministic", () => {
@@ -63,15 +63,15 @@ describe("hashline", () => {
 		it("produces different hashes for different content", () => {
 			const hash1 = computeLineHash(1, "hello");
 			const hash2 = computeLineHash(1, "world");
-			// Very unlikely to collide, but not impossible with 256 buckets
+			// Very unlikely to collide, but not impossible with 32-bit output
 			// This test documents intent rather than guaranteeing uniqueness
-			expect(hash1).toMatch(/^[0-9a-f]{2}$/);
-			expect(hash2).toMatch(/^[0-9a-f]{2}$/);
+			expect(hash1).toMatch(/^[0-9a-f]{8}$/);
+			expect(hash2).toMatch(/^[0-9a-f]{8}$/);
 		});
 
-		it("result is in HASH_DICT", () => {
+		it("first byte of hash is in HASH_DICT", () => {
 			const hash = computeLineHash(1, "test content");
-			expect(HASH_DICT).toContain(hash);
+			expect(HASH_DICT).toContain(hash.slice(0, 2));
 		});
 	});
 
@@ -96,9 +96,9 @@ describe("hashline", () => {
 			const lines = result.split("\n");
 
 			expect(lines).toHaveLength(3);
-			expect(lines[0]).toMatch(/^1:[0-9a-f]{2}\|line one$/);
-			expect(lines[1]).toMatch(/^2:[0-9a-f]{2}\|line two$/);
-			expect(lines[2]).toMatch(/^3:[0-9a-f]{2}\|line three$/);
+			expect(lines[0]).toMatch(/^1:[0-9a-f]{8}\|line one$/);
+			expect(lines[1]).toMatch(/^2:[0-9a-f]{8}\|line two$/);
+			expect(lines[2]).toMatch(/^3:[0-9a-f]{8}\|line three$/);
 		});
 
 		it("respects startLine parameter", () => {
@@ -106,29 +106,38 @@ describe("hashline", () => {
 			const result = formatHashLines(content, 10);
 			const lines = result.split("\n");
 
-			expect(lines[0]).toMatch(/^10:[0-9a-f]{2}\|line a$/);
-			expect(lines[1]).toMatch(/^11:[0-9a-f]{2}\|line b$/);
+			expect(lines[0]).toMatch(/^10:[0-9a-f]{8}\|line a$/);
+			expect(lines[1]).toMatch(/^11:[0-9a-f]{8}\|line b$/);
 		});
 
-		it("returns empty string for empty content", () => {
-			expect(formatHashLines("")).toBe("");
+		it("supports consistent refs for offset reads with duplicate lines", () => {
+			const allLines = ["header", "}", "}", "tail"];
+			const fullRef = formatHashLines(allLines.join("\n")).split("\n")[2].split("|")[0];
+			const partialRef = formatHashLines(allLines.slice(2).join("\n"), 3, allLines.slice(0, 2))
+				.split("\n")[0]
+				.split("|")[0];
+			expect(partialRef).toBe(fullRef);
+		});
+
+		it("returns a usable hashline for empty content", () => {
+			expect(formatHashLines("")).toMatch(/^1:[0-9a-f]{8}\|$/);
 		});
 	});
 
 	describe("parseLineRef", () => {
 		it("parses valid line references", () => {
-			const result = parseLineRef("42:a3");
-			expect(result).toEqual({ line: 42, hash: "a3" });
+			const result = parseLineRef("42:a3f1c2d4");
+			expect(result).toEqual({ line: 42, hash: "a3f1c2d4" });
 		});
 
 		it("parses single-digit line numbers", () => {
-			const result = parseLineRef("1:ff");
-			expect(result).toEqual({ line: 1, hash: "ff" });
+			const result = parseLineRef("1:ffffffff");
+			expect(result).toEqual({ line: 1, hash: "ffffffff" });
 		});
 
 		it("parses large line numbers", () => {
-			const result = parseLineRef("99999:00");
-			expect(result).toEqual({ line: 99999, hash: "00" });
+			const result = parseLineRef("99999:00000000");
+			expect(result).toEqual({ line: 99999, hash: "00000000" });
 		});
 
 		it("throws on invalid format - no colon", () => {
@@ -141,6 +150,10 @@ describe("hashline", () => {
 
 		it("throws on invalid format - 3-char hash", () => {
 			expect(() => parseLineRef("42:abc")).toThrow(/Invalid line reference format/);
+		});
+
+		it("throws on invalid format - 2-char hash", () => {
+			expect(() => parseLineRef("42:ab")).toThrow(/Invalid line reference format/);
 		});
 
 		it("throws on invalid format - non-hex hash", () => {
@@ -161,26 +174,32 @@ describe("hashline", () => {
 
 		it("throws for line number out of bounds (too high)", () => {
 			const lines = ["hello", "world"];
-			expect(() => validateLineRef(lines, "3:00")).toThrow(/out of bounds/);
+			expect(() => validateLineRef(lines, "3:00000000")).toThrow(/out of bounds/);
 		});
 
 		it("throws for line number out of bounds (zero)", () => {
 			const lines = ["hello", "world"];
-			expect(() => validateLineRef(lines, "0:00")).toThrow(/out of bounds/);
+			expect(() => validateLineRef(lines, "0:00000000")).toThrow(/out of bounds/);
 		});
 
 		it("throws for hash mismatch", () => {
 			const lines = ["hello", "world"];
 			const actualHash = computeLineHash(1, "hello");
-			const wrongHash = actualHash === "00" ? "01" : "00";
+			const wrongHash = actualHash === "00000000" ? "00000001" : "00000000";
 			expect(() => validateLineRef(lines, `1:${wrongHash}`)).toThrow(/Hash mismatch/);
 		});
 
 		it("includes current content in mismatch error", () => {
 			const lines = ["hello", "world"];
 			const actualHash = computeLineHash(1, "hello");
-			const wrongHash = actualHash === "00" ? "01" : "00";
+			const wrongHash = actualHash === "00000000" ? "00000001" : "00000000";
 			expect(() => validateLineRef(lines, `1:${wrongHash}`)).toThrow(/Current content: "hello"/);
+		});
+
+		it("rejects stale references when duplicate-line occupancy changes", () => {
+			const originalRef = formatHashLines("x\n}\n}\ny").split("\n")[1].split("|")[0];
+			const shiftedLines = ["}", "}", "y"];
+			expect(() => validateLineRef(shiftedLines, originalRef)).toThrow(/Hash mismatch/);
 		});
 	});
 
@@ -253,6 +272,19 @@ describe("hashline", () => {
 					},
 				]);
 				expect(result).toBe("line 1\na\nb\nc\nline 3");
+			});
+
+			it("deletes the target range when replacement text is empty", () => {
+				const content = "line 1\nline 2\nline 3";
+				const result = applyHashlineEdits(content, [
+					{
+						type: "replace_lines",
+						start_line: ref(2, "line 2"),
+						end_line: ref(3, "line 3"),
+						text: "",
+					},
+				]);
+				expect(result).toBe("line 1");
 			});
 
 			it("throws for invalid range (start > end)", () => {

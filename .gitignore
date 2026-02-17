@@ -29,6 +29,7 @@ compaction-results/
 .opencode/
 syntax.jsonl
 out.jsonl
+result
 pi-*.html
 out.html
 packages/coding-agent/binaries/

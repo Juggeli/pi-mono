@@ -8,7 +8,7 @@ import { resolveToCwd } from "./path-utils.js";
 
 const SetLineSchema = Type.Object({
 	type: Type.Literal("set_line"),
-	line: Type.String({ description: 'Line reference in LINE:HASH format (e.g., "5:a3")' }),
+	line: Type.String({ description: 'Line reference in LINE:HASH format (e.g., "5:a3f1c2d4")' }),
 	text: Type.String({ description: "New content for the line" }),
 });
 
@@ -76,8 +76,8 @@ export function createEditTool(cwd: string, options?: EditToolOptions): AgentToo
 LINE:HASH FORMAT:
 Each line reference must be in "LINE:HASH" format where:
 - LINE: 1-based line number
-- HASH: 2-character hex hash of line content
-- Example: "5:a3" means line 5 with hash "a3"
+- HASH: 8-character hex hash of line identity
+- Example: "5:a3f1c2d4" means line 5 with hash "a3f1c2d4"
 
 GETTING HASHES:
 Use the read tool first - it returns lines in "LINE:HASH|content" format.
@@ -85,13 +85,14 @@ Use the read tool first - it returns lines in "LINE:HASH|content" format.
 THREE OPERATION TYPES:
 
 1. set_line: Replace a single line
-   { "type": "set_line", "line": "5:a3", "text": "const y = 2" }
+   { "type": "set_line", "line": "5:a3f1c2d4", "text": "const y = 2" }
 
 2. replace_lines: Replace a range of lines (inclusive)
-   { "type": "replace_lines", "start_line": "5:a3", "end_line": "7:b2", "text": "new\\ncontent" }
+   { "type": "replace_lines", "start_line": "5:a3f1c2d4", "end_line": "7:b2e4f6a8", "text": "new\\ncontent" }
+   { "type": "replace_lines", "start_line": "5:a3f1c2d4", "end_line": "7:b2e4f6a8", "text": "" } // deletes lines 5-7
 
 3. insert_after: Insert new lines after a specific line
-   { "type": "insert_after", "line": "5:a3", "text": "console.log('hi')" }
+   { "type": "insert_after", "line": "5:a3f1c2d4", "text": "console.log('hi')" }
 
 HASH MISMATCH HANDLING:
 If the hash doesn't match the current content, the edit fails with a clear error showing current hash.

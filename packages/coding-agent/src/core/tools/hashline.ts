@@ -1,9 +1,9 @@
 /**
  * Hashline-based edit system.
  *
- * Lines are referenced by "LINE:HASH" format (e.g., "5:a3"), where the hash is
- * a 2-char hex derived from the line's whitespace-stripped content. This prevents
- * stale-content edits and provides precise line-level operations.
+ * Lines are referenced by "LINE:HASH" format (e.g., "5:a3f1c2d4"), where hash
+ * is an 8-char hex derived from line number, normalized content, and per-content
+ * occurrence index. This strengthens stale-reference detection for duplicate lines.
  */
 
 import { createHash } from "node:crypto";
@@ -273,7 +273,7 @@ export const HASH_DICT = [
 ] as const;
 
 /** Regex to parse hashline-formatted output: "LINE:HASH|content" */
-export const HASHLINE_PATTERN = /^(\d+):([0-9a-f]{2})\|(.*)$/;
+export const HASHLINE_PATTERN = /^(\d+):([0-9a-f]{8})\|(.*)$/;
 
 // ============================================================================
 // Types
@@ -309,25 +309,50 @@ export type HashlineEdit = SetLineEdit | ReplaceLinesEdit | InsertAfterEdit;
 // Hash Computation
 // ============================================================================
 
-/** Compute a 2-char hex hash for a line. Strips whitespace, hashes with MD5, takes readUInt32LE(0) % 256 */
-export function computeLineHash(_lineNumber: number, content: string): string {
-	const stripped = content.replace(/\s+/g, "");
-	const digest = createHash("md5").update(stripped).digest();
-	const index = digest.readUInt32LE(0) % 256;
-	return HASH_DICT[index];
+function normalizeLineContent(content: string): string {
+	return content.replace(/\s+/g, "");
+}
+
+function getLineOccurrence(lines: string[], lineNumber: number): number {
+	const target = normalizeLineContent(lines[lineNumber - 1]);
+	let occurrence = 0;
+	for (let i = 0; i < lineNumber; i++) {
+		if (normalizeLineContent(lines[i]) === target) {
+			occurrence++;
+		}
+	}
+	return occurrence;
+}
+
+/** Compute an 8-char hex hash for a line using line number, normalized content, and occurrence index. */
+export function computeLineHash(lineNumber: number, content: string, occurrence = 1): string {
+	const stripped = normalizeLineContent(content);
+	const digest = createHash("md5").update(`${lineNumber}\0${occurrence}\0${stripped}`).digest();
+	return `${HASH_DICT[digest[0]]}${digest.toString("hex", 1, 4)}`;
 }
 
 /** Format a single line as "LINE:HASH|content" */
-export function formatHashLine(lineNumber: number, content: string): string {
-	const hash = computeLineHash(lineNumber, content);
+export function formatHashLine(lineNumber: number, content: string, occurrence = 1): string {
+	const hash = computeLineHash(lineNumber, content, occurrence);
 	return `${lineNumber}:${hash}|${content}`;
 }
 
 /** Format all lines of content with hashline prefixes. startLine is 1-indexed (default 1). */
-export function formatHashLines(content: string, startLine = 1): string {
-	if (!content) return "";
+export function formatHashLines(content: string, startLine = 1, precedingLines: string[] = []): string {
 	const lines = content.split("\n");
-	return lines.map((line, index) => formatHashLine(startLine + index, line)).join("\n");
+	const occurrenceByContent = new Map<string, number>();
+	for (const line of precedingLines) {
+		const normalized = normalizeLineContent(line);
+		occurrenceByContent.set(normalized, (occurrenceByContent.get(normalized) ?? 0) + 1);
+	}
+	return lines
+		.map((line, index) => {
+			const normalized = normalizeLineContent(line);
+			const occurrence = (occurrenceByContent.get(normalized) ?? 0) + 1;
+			occurrenceByContent.set(normalized, occurrence);
+			return formatHashLine(startLine + index, line, occurrence);
+		})
+		.join("\n");
 }
 
 // ============================================================================
@@ -336,9 +361,9 @@ export function formatHashLines(content: string, startLine = 1): string {
 
 /** Parse a "LINE:HASH" reference string into { line, hash } */
 export function parseLineRef(ref: string): LineRef {
-	const match = ref.match(/^(\d+):([0-9a-f]{2})$/);
+	const match = ref.match(/^(\d+):([0-9a-f]{8})$/);
 	if (!match) {
-		throw new Error(`Invalid line reference format: "${ref}". Expected format: "LINE:HASH" (e.g., "42:a3")`);
+		throw new Error(`Invalid line reference format: "${ref}". Expected format: "LINE:HASH" (e.g., "42:a3f1c2d4")`);
 	}
 	return {
 		line: Number.parseInt(match[1], 10),
@@ -355,7 +380,8 @@ export function validateLineRef(lines: string[], ref: string): void {
 	}
 
 	const content = lines[line - 1];
-	const currentHash = computeLineHash(line, content);
+	const occurrence = getLineOccurrence(lines, line);
+	const currentHash = computeLineHash(line, content, occurrence);
 
 	if (currentHash !== hash) {
 		throw new Error(
@@ -411,7 +437,8 @@ export function applyHashlineEdits(content: string, edits: HashlineEdit[]): stri
 				if (startLine > endLine) {
 					throw new Error(`Invalid range: start line ${startLine} cannot be greater than end line ${endLine}`);
 				}
-				const newLines = unescapeNewlines(edit.text).split("\n");
+				const unescapedText = unescapeNewlines(edit.text);
+				const newLines = unescapedText === "" ? [] : unescapedText.split("\n");
 				lines.splice(startLine - 1, endLine - startLine + 1, ...newLines);
 				break;
 			}
