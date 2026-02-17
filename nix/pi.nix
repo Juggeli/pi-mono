@@ -41,6 +41,13 @@ buildNpmPackage {
     printf '#!/bin/sh\n"%s" "$@" || true\n' "$real_tsgo" > node_modules/.bin/tsgo
     chmod +x node_modules/.bin/tsgo
 
+    # Skip generate-models in the ai package — it fetches from external APIs
+    # which aren't available in the Nix sandbox. The checked-in
+    # models.generated.ts is used instead.
+    substituteInPlace packages/ai/package.json \
+      --replace-fail '"build": "npm run generate-models && tsgo -p tsconfig.build.json"' \
+                     '"build": "tsgo -p tsconfig.build.json"'
+
     npm run build
 
     # Stub out koffi before bun compile. Koffi is a native FFI module used only
