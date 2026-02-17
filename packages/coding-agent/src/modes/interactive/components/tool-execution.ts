@@ -15,7 +15,7 @@ import stripAnsi from "strip-ansi";
 import type { ToolDefinition } from "../../../core/extensions/types.js";
 import { computeEditDiff, type EditDiffError, type EditDiffResult } from "../../../core/tools/edit-diff.js";
 import { allTools } from "../../../core/tools/index.js";
-import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize } from "../../../core/tools/truncate.js";
+import { DEFAULT_MAX_BYTES, formatSize } from "../../../core/tools/truncate.js";
 import { convertToPng } from "../../../utils/image-convert.js";
 import { sanitizeBinaryOutput } from "../../../utils/shell.js";
 import { getLanguageFromPath, highlightCode, theme } from "../theme/theme.js";
@@ -592,52 +592,6 @@ export class ToolExecutionComponent extends Container {
 			}
 
 			text = `${theme.fg("toolTitle", theme.bold("read"))} ${pathDisplay}`;
-
-			if (this.result) {
-				const output = this.getTextOutput();
-				const rawPath = str(this.args?.file_path ?? this.args?.path);
-				const lang = rawPath ? getLanguageFromPath(rawPath) : undefined;
-				const lines = lang ? highlightCode(replaceTabs(output), lang) : output.split("\n");
-
-				const maxLines = this.expanded ? lines.length : 10;
-				const displayLines = lines.slice(0, maxLines);
-				const remaining = lines.length - maxLines;
-
-				text +=
-					"\n\n" +
-					displayLines
-						.map((line: string) => (lang ? replaceTabs(line) : theme.fg("toolOutput", replaceTabs(line))))
-						.join("\n");
-				if (remaining > 0) {
-					text += `${theme.fg("muted", `\n... (${remaining} more lines,`)} ${keyHint("expandTools", "to expand")})`;
-				}
-
-				const truncation = this.result.details?.truncation;
-				if (truncation?.truncated) {
-					if (truncation.firstLineExceedsLimit) {
-						text +=
-							"\n" +
-							theme.fg(
-								"warning",
-								`[First line exceeds ${formatSize(truncation.maxBytes ?? DEFAULT_MAX_BYTES)} limit]`,
-							);
-					} else if (truncation.truncatedBy === "lines") {
-						text +=
-							"\n" +
-							theme.fg(
-								"warning",
-								`[Truncated: showing ${truncation.outputLines} of ${truncation.totalLines} lines (${truncation.maxLines ?? DEFAULT_MAX_LINES} line limit)]`,
-							);
-					} else {
-						text +=
-							"\n" +
-							theme.fg(
-								"warning",
-								`[Truncated: ${truncation.outputLines} lines shown (${formatSize(truncation.maxBytes ?? DEFAULT_MAX_BYTES)} limit)]`,
-							);
-					}
-				}
-			}
 		} else if (this.toolName === "write") {
 			const rawPath = str(this.args?.file_path ?? this.args?.path);
 			const fileContent = str(this.args?.content);
