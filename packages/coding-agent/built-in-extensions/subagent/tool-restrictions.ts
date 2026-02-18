@@ -45,6 +45,13 @@ export const LIBRARIAN_RESTRICTIONS: AgentToolRestrictions = {
 	edit: false,
 };
 
+/** Restrictions for the oracle agent — read-only */
+export const ORACLE_RESTRICTIONS: AgentToolRestrictions = {
+	...SUBAGENT_DEFAULTS,
+	write: false,
+	edit: false,
+};
+
 /** Restrictions for the prometheus agent — read-only but keeps subagent access */
 export const PROMETHEUS_RESTRICTIONS: AgentToolRestrictions = {
 	write: false,
