@@ -5,6 +5,7 @@
 import type { AgentConfig, AgentFactory, AgentMode } from "../types.js";
 import { createCodeAgent } from "./code.js";
 import { createExploreAgent } from "./explore.js";
+import { createLibrarianAgent } from "./librarian.js";
 import { createPrometheusAgent } from "./prometheus.js";
 import { createReviewAgent } from "./review.js";
 
@@ -12,6 +13,7 @@ import { createReviewAgent } from "./review.js";
 const BUILTIN_FACTORIES: AgentFactory[] = [
 	createCodeAgent,
 	createExploreAgent,
+	createLibrarianAgent,
 	createPrometheusAgent,
 	createReviewAgent,
 ];

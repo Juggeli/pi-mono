@@ -30,6 +30,8 @@ export interface AgentConfig {
 	systemPrompt: string;
 	tools: AgentToolRestrictions;
 	category?: string;
+	/** When true, load extensions in the child session (gives access to exa_search, grep_code_search, etc.) */
+	loadExtensions?: boolean;
 }
 
 /** Factory function that produces an AgentConfig */

@@ -45,10 +45,15 @@ export async function runAgent(
 	// Build filtered tools
 	const tools = resolveTools(cwd, agentConfig.tools);
 
-	// Create resource loader with no extensions/skills (lightweight child)
+	// Set PI_SUBAGENT to prevent fork-bombing when extensions are loaded
+	if (agentConfig.loadExtensions) {
+		process.env.PI_SUBAGENT = "1";
+	}
+
+	// Create resource loader — load extensions only when the agent requires them
 	const resourceLoader = new DefaultResourceLoader({
 		cwd,
-		noExtensions: true,
+		noExtensions: !agentConfig.loadExtensions,
 		noSkills: true,
 		noPromptTemplates: true,
 		noThemes: true,
