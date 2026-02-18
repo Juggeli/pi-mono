@@ -32,6 +32,7 @@ export const createCodeAgent: AgentFactory = () => ({
 		"- Hard debugging (2+ failed fix attempts) -> Fire oracle background for root cause analysis",
 		"- Architecture decisions with real tradeoffs -> Fire oracle background for evaluation",
 		"- After significant implementation -> Fire oracle background for self-review",
+		"- Well-defined subtask from todo list -> Delegate to sisyphus-junior (single or background)",
 		"",
 		"**Communication Style**:",
 		'- Be concise. No acknowledgments ("I\'m on it", "Let me..."). Just start.',

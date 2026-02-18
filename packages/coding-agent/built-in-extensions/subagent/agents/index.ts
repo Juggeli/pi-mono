@@ -9,6 +9,7 @@ import { createLibrarianAgent } from "./librarian.js";
 import { createOracleAgent } from "./oracle.js";
 import { createPrometheusAgent } from "./prometheus.js";
 import { createReviewAgent } from "./review.js";
+import { createSisyphusJuniorAgent } from "./sisyphus-junior.js";
 
 /** All built-in agent factories */
 const BUILTIN_FACTORIES: AgentFactory[] = [
@@ -18,6 +19,7 @@ const BUILTIN_FACTORIES: AgentFactory[] = [
 	createOracleAgent,
 	createPrometheusAgent,
 	createReviewAgent,
+	createSisyphusJuniorAgent,
 ];
 
 /** Create and cache the built-in agents map */
