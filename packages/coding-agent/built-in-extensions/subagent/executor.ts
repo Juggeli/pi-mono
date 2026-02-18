@@ -37,8 +37,19 @@ export async function runAgent(
 	// Resolve model from registry if specified
 	let model = ctx.model;
 	if (agentConfig.model && ctx.modelRegistry) {
+		let found: typeof model | undefined;
 		const allModels = ctx.modelRegistry.getAll();
-		const found = allModels.find((m) => m.id === agentConfig.model);
+		// Try exact ID match first (handles IDs with slashes like "hf:foo/Bar")
+		found = allModels.find((m) => m.id === agentConfig.model);
+		if (!found) {
+			// Try provider/modelId format
+			const slashIdx = agentConfig.model.indexOf("/");
+			if (slashIdx !== -1) {
+				const provider = agentConfig.model.substring(0, slashIdx);
+				const modelId = agentConfig.model.substring(slashIdx + 1);
+				found = allModels.find((m) => m.provider === provider && m.id === modelId);
+			}
+		}
 		if (found) model = found;
 	}
 
@@ -70,6 +81,7 @@ export async function runAgent(
 		resourceLoader,
 		sessionManager: SessionManager.inMemory(cwd),
 		settingsManager: SettingsManager.create(cwd),
+		thinkingLevel: agentConfig.thinkingLevel,
 	};
 
 	const { session } = await createAgentSession(sessionOptions);

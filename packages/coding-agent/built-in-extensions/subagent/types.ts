@@ -2,6 +2,7 @@
  * Shared types for the subagent extension.
  */
 
+import type { ThinkingLevel } from "@mariozechner/pi-agent-core";
 import type { Message } from "@mariozechner/pi-ai";
 import type { AgentSession, AgentSessionEvent } from "@mariozechner/pi-coding-agent";
 
@@ -27,6 +28,7 @@ export interface AgentConfig {
 	mode: AgentMode;
 	model?: string;
 	temperature?: number;
+	thinkingLevel?: ThinkingLevel;
 	systemPrompt: string;
 	tools: AgentToolRestrictions;
 	category?: string;
