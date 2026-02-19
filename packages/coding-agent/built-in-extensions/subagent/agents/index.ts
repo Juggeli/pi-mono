@@ -3,6 +3,7 @@
  */
 
 import type { AgentConfig, AgentFactory, AgentMode } from "../types.js";
+import { createAtlasAgent } from "./atlas.js";
 import { createCodeAgent } from "./code.js";
 import { createExploreAgent } from "./explore.js";
 import { createLibrarianAgent } from "./librarian.js";
@@ -15,6 +16,7 @@ import { createSisyphusJuniorAgent } from "./sisyphus-junior.js";
 
 /** All built-in agent factories */
 const BUILTIN_FACTORIES: AgentFactory[] = [
+	createAtlasAgent,
 	createCodeAgent,
 	createExploreAgent,
 	createLibrarianAgent,
