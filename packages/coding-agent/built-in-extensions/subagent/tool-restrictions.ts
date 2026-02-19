@@ -66,6 +66,12 @@ export const MOMUS_RESTRICTIONS: AgentToolRestrictions = {
 	edit: false,
 };
 
+/** Restrictions for the atlas agent — read-only but keeps subagent access for delegation */
+export const ATLAS_RESTRICTIONS: AgentToolRestrictions = {
+	write: false,
+	edit: false,
+};
+
 /** Restrictions for the prometheus agent — read-only but keeps subagent access */
 export const PROMETHEUS_RESTRICTIONS: AgentToolRestrictions = {
 	write: false,
