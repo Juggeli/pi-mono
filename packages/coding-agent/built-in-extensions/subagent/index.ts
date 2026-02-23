@@ -271,15 +271,25 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	// /agent-models command
-	const allAgentConfigs = listAgents("all");
+	const allAgentConfigs = listAgents();
+	let cachedModelRegistry: import("@mariozechner/pi-coding-agent").ModelRegistry | undefined;
 	pi.registerCommand("agent-models", {
 		description: "View or set subagent model overrides",
 		getArgumentCompletions: (prefix: string) => {
 			// If prefix contains a space, we're completing the second arg (model)
 			const spaceIdx = prefix.indexOf(" ");
 			if (spaceIdx !== -1) {
-				// No model completions — model registry isn't available here
-				return null;
+				if (!cachedModelRegistry) return null;
+				const modelPrefix = prefix.substring(spaceIdx + 1).toLowerCase();
+				const models = cachedModelRegistry.getAvailable();
+				return models
+					.filter((m) => `${m.provider}/${m.id}`.toLowerCase().startsWith(modelPrefix))
+					.slice(0, 50)
+					.map((m) => ({
+						value: `${prefix.substring(0, spaceIdx)} ${m.provider}/${m.id}`,
+						label: `${m.provider}/${m.id}`,
+						description: m.name || "",
+					}));
 			}
 			// First arg: agent names
 			return allAgentConfigs
@@ -367,11 +377,14 @@ export default function (pi: ExtensionAPI) {
 
 	// Update status bar on each turn
 	pi.on("turn_start", async (_event, ctx) => {
+		if (!cachedModelRegistry) cachedModelRegistry = ctx.modelRegistry;
 		updateModeStatus(ctx);
 	});
 
 	// Restore mode from session on startup
 	pi.on("session_start", async (_event, ctx) => {
+		cachedModelRegistry = ctx.modelRegistry;
+
 		const entries = ctx.sessionManager.getEntries();
 		const modeEntry = entries
 			.filter((e: { type: string; customType?: string }) => e.type === "custom" && e.customType === "subagent-mode")

@@ -35,23 +35,33 @@ export async function runAgent(
 ): Promise<{ result: TaskResult; session: AgentSession }> {
 	const cwd = ctx.cwd;
 
-	// Resolve model from registry if specified, with persisted override taking priority
+	// Resolve model from registry if specified, with persisted override taking priority.
+	// Matching mirrors the main model-resolver: case-insensitive, provider/id then id-only fallback.
 	const effectiveModelId = getModelOverride(agentConfig.name) ?? agentConfig.model;
 	let model = ctx.model;
 	if (effectiveModelId && ctx.modelRegistry) {
-		let found: typeof model | undefined;
 		const allModels = ctx.modelRegistry.getAll();
-		// Try exact ID match first (handles IDs with slashes like "hf:foo/Bar")
-		found = allModels.find((m) => m.id === effectiveModelId);
-		if (!found) {
-			// Try provider/modelId format
-			const slashIdx = effectiveModelId.indexOf("/");
-			if (slashIdx !== -1) {
-				const provider = effectiveModelId.substring(0, slashIdx);
-				const modelId = effectiveModelId.substring(slashIdx + 1);
-				found = allModels.find((m) => m.provider === provider && m.id === modelId);
-			}
+		const lower = effectiveModelId.toLowerCase();
+		let found: typeof model | undefined;
+
+		// Try provider/modelId format (case-insensitive)
+		const slashIdx = effectiveModelId.indexOf("/");
+		if (slashIdx !== -1) {
+			const provider = effectiveModelId.substring(0, slashIdx).toLowerCase();
+			const modelId = effectiveModelId.substring(slashIdx + 1).toLowerCase();
+			found = allModels.find((m) => m.provider.toLowerCase() === provider && m.id.toLowerCase() === modelId);
 		}
+
+		// Fall back to exact ID match (case-insensitive)
+		if (!found) {
+			found = allModels.find((m) => m.id.toLowerCase() === lower);
+		}
+
+		// Fall back to full "provider/id" string match (case-insensitive)
+		if (!found) {
+			found = allModels.find((m) => `${m.provider}/${m.id}`.toLowerCase() === lower);
+		}
+
 		if (found) model = found;
 	}
 
