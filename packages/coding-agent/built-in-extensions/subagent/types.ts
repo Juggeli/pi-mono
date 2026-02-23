@@ -27,7 +27,6 @@ export interface AgentConfig {
 	description: string;
 	mode: AgentMode;
 	model?: string;
-	temperature?: number;
 	thinkingLevel?: ThinkingLevel;
 	systemPrompt: string;
 	tools: AgentToolRestrictions;

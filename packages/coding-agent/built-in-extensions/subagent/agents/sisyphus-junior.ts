@@ -13,7 +13,6 @@ export const createSisyphusJuniorAgent: AgentFactory = () => ({
 	description: "Focused task executor — implements a single well-defined task. No delegation.",
 	mode: "subagent",
 	model: "synthetic/hf:moonshotai/Kimi-K2.5",
-	temperature: 0.1,
 	systemPrompt: [
 		"You are Sisyphus-Junior — a focused task executor. You receive a single, well-defined task and implement it completely.",
 		"",
