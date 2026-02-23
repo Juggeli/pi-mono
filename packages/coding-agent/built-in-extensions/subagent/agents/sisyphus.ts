@@ -1,11 +1,11 @@
 /**
- * Code agent — primary mode for implementation tasks (Sisyphus).
+ * Sisyphus agent — primary mode for implementation tasks.
  */
 
 import type { AgentFactory } from "../types.js";
 
-export const createCodeAgent: AgentFactory = () => ({
-	name: "code",
+export const createSisyphusAgent: AgentFactory = () => ({
+	name: "sisyphus",
 	description: "Primary orchestrator - Sisyphus mode for implementation tasks",
 	mode: "primary",
 	systemPrompt: [

@@ -212,7 +212,7 @@ export default function (pi: ExtensionAPI) {
 
 	const primaryAgents = listAgents("primary");
 	const primaryModeNames = primaryAgents.map((a) => a.name);
-	let activeModeName = primaryModeNames[0] ?? "code";
+	let activeModeName = primaryModeNames[0] ?? "sisyphus";
 
 	function getActiveMode() {
 		return primaryAgents.find((a) => a.name === activeModeName);
