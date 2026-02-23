@@ -15,7 +15,6 @@ export const createMetisAgent: AgentFactory = () => ({
 		"Pre-planning consultant — analyzes requests for hidden requirements, ambiguities, and risks before planning begins.",
 	mode: "subagent",
 	model: "openai-codex/gpt-5.2",
-	temperature: 0.3,
 	thinkingLevel: "high",
 	systemPrompt: [
 		"You are METIS, a pre-planning consultant. Your job is to analyze a user request BEFORE planning begins, surfacing what the user didn't say.",

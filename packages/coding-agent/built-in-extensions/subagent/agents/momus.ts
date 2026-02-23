@@ -15,7 +15,6 @@ export const createMomusAgent: AgentFactory = () => ({
 		"Plan reviewer — evaluates work plans for clarity, verifiability, and completeness. Scores steps and suggests fixes.",
 	mode: "subagent",
 	model: "openai-codex/gpt-5.2",
-	temperature: 0.1,
 	thinkingLevel: "high",
 	systemPrompt: [
 		"You are MOMUS, a plan reviewer. Your job is to evaluate work plans and catch weaknesses before execution begins.",
