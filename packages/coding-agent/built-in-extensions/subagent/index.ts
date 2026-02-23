@@ -14,6 +14,7 @@ import { Type } from "@sinclair/typebox";
 import { getAgent, listAgents } from "./agents/index.js";
 import { ConcurrencyManager } from "./concurrency.js";
 import { resumeAgent, runAgent, toSingleResult } from "./executor.js";
+import { clearModelOverride, loadModelOverrides, setModelOverride } from "./model-config.js";
 import { BackgroundTaskManager } from "./task-manager.js";
 import type { DisplayItem, OnUpdateCallback, SingleResult, SubagentDetails, UsageStats } from "./types.js";
 import { COLLAPSED_ITEM_COUNT, emptyUsage, MAX_CONCURRENCY, MAX_PARALLEL_TASKS } from "./types.js";
@@ -266,6 +267,81 @@ export default function (pi: ExtensionAPI) {
 			if (switchMode(name, ctx)) {
 				ctx.ui.notify(`Switched to ${name} mode`, "info");
 			}
+		},
+	});
+
+	// /agent-models command
+	const allAgentConfigs = listAgents("all");
+	pi.registerCommand("agent-models", {
+		description: "View or set subagent model overrides",
+		getArgumentCompletions: (prefix: string) => {
+			// If prefix contains a space, we're completing the second arg (model)
+			const spaceIdx = prefix.indexOf(" ");
+			if (spaceIdx !== -1) {
+				// No model completions — model registry isn't available here
+				return null;
+			}
+			// First arg: agent names
+			return allAgentConfigs
+				.filter((a) => a.name.toLowerCase().startsWith(prefix.toLowerCase()))
+				.map((a) => ({
+					value: a.name,
+					label: a.name,
+					description: a.description,
+				}));
+		},
+		handler: async (args, ctx) => {
+			const parts = args.trim().split(/\s+/);
+			const agentName = parts[0] || "";
+			const modelArg = parts.slice(1).join(" ");
+
+			// No args: list all agents with their models
+			if (!agentName) {
+				const overrides = loadModelOverrides();
+				const lines = allAgentConfigs.map((a) => {
+					const override = overrides[a.name];
+					const defaultModel = a.model || "(parent model)";
+					if (override) {
+						return `- ${a.name}: ${override} (override, default: ${defaultModel})`;
+					}
+					return `- ${a.name}: ${defaultModel}`;
+				});
+				ctx.ui.notify(`Subagent models:\n\n${lines.join("\n")}`, "info");
+				return;
+			}
+
+			// Validate agent name
+			const agent = allAgentConfigs.find((a) => a.name === agentName);
+			if (!agent) {
+				const available = allAgentConfigs.map((a) => a.name).join(", ");
+				ctx.ui.notify(`Unknown agent: "${agentName}". Available: ${available}`, "error");
+				return;
+			}
+
+			// --reset: clear override
+			if (modelArg === "--reset") {
+				clearModelOverride(agentName);
+				const defaultModel = agent.model || "(parent model)";
+				ctx.ui.notify(`Reset ${agentName} to default: ${defaultModel}`, "info");
+				return;
+			}
+
+			// No model arg: show current for this agent
+			if (!modelArg) {
+				const overrides = loadModelOverrides();
+				const override = overrides[agentName];
+				const defaultModel = agent.model || "(parent model)";
+				if (override) {
+					ctx.ui.notify(`${agentName}: ${override} (override, default: ${defaultModel})`, "info");
+				} else {
+					ctx.ui.notify(`${agentName}: ${defaultModel} (default)`, "info");
+				}
+				return;
+			}
+
+			// Set override
+			setModelOverride(agentName, modelArg);
+			ctx.ui.notify(`Set ${agentName} model to: ${modelArg}`, "info");
 		},
 	});
 

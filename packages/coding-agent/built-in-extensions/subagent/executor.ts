@@ -15,6 +15,7 @@ import {
 	SessionManager,
 	SettingsManager,
 } from "@mariozechner/pi-coding-agent";
+import { getModelOverride } from "./model-config.js";
 import { resolveTools } from "./tool-restrictions.js";
 import type { AgentConfig, OnAgentEventCallback, SingleResult, TaskResult, UsageStats } from "./types.js";
 import { emptyUsage } from "./types.js";
@@ -34,19 +35,20 @@ export async function runAgent(
 ): Promise<{ result: TaskResult; session: AgentSession }> {
 	const cwd = ctx.cwd;
 
-	// Resolve model from registry if specified
+	// Resolve model from registry if specified, with persisted override taking priority
+	const effectiveModelId = getModelOverride(agentConfig.name) ?? agentConfig.model;
 	let model = ctx.model;
-	if (agentConfig.model && ctx.modelRegistry) {
+	if (effectiveModelId && ctx.modelRegistry) {
 		let found: typeof model | undefined;
 		const allModels = ctx.modelRegistry.getAll();
 		// Try exact ID match first (handles IDs with slashes like "hf:foo/Bar")
-		found = allModels.find((m) => m.id === agentConfig.model);
+		found = allModels.find((m) => m.id === effectiveModelId);
 		if (!found) {
 			// Try provider/modelId format
-			const slashIdx = agentConfig.model.indexOf("/");
+			const slashIdx = effectiveModelId.indexOf("/");
 			if (slashIdx !== -1) {
-				const provider = agentConfig.model.substring(0, slashIdx);
-				const modelId = agentConfig.model.substring(slashIdx + 1);
+				const provider = effectiveModelId.substring(0, slashIdx);
+				const modelId = effectiveModelId.substring(slashIdx + 1);
 				found = allModels.find((m) => m.provider === provider && m.id === modelId);
 			}
 		}
