@@ -8,7 +8,7 @@ import type { AgentFactory } from "../types.js";
 export const createExploreAgent: AgentFactory = () => ({
 	name: "explore",
 	description: "Read-only codebase exploration and search. Cannot write or edit files.",
-	mode: "all",
+	mode: "subagent",
 	model: "synthetic/hf:MiniMaxAI/MiniMax-M2.1",
 	systemPrompt: [
 		"You are a codebase search specialist. Your sole purpose is to find files, code patterns, and architectural details, then report them back with precision.",

@@ -11,7 +11,7 @@ import type { AgentFactory } from "../types.js";
 export const createSisyphusJuniorAgent: AgentFactory = () => ({
 	name: "sisyphus-junior",
 	description: "Focused task executor — implements a single well-defined task. No delegation.",
-	mode: "all",
+	mode: "subagent",
 	model: "synthetic/hf:moonshotai/Kimi-K2.5",
 	temperature: 0.1,
 	systemPrompt: [

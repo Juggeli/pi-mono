@@ -8,7 +8,7 @@ import type { AgentFactory } from "../types.js";
 export const createReviewAgent: AgentFactory = () => ({
 	name: "review",
 	description: "Code review specialist. Analyzes code for issues, style, and improvements. Read-only.",
-	mode: "all",
+	mode: "subagent",
 	systemPrompt: [
 		"You are a code review agent. Analyze code for bugs, style issues, security concerns, and potential improvements.",
 		"",
