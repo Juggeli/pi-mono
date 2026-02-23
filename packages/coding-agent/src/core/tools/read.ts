@@ -153,12 +153,8 @@ export function createReadTool(cwd: string, options?: ReadToolOptions): AgentToo
 									selectedContent = allLines.slice(startLine).join("\n");
 								}
 
-								// Transform to hashline format (LINE:HASH|content)
-								const hashlineContent = formatHashLines(
-									selectedContent,
-									startLineDisplay,
-									allLines.slice(0, startLine),
-								);
+								// Transform to hashline format (LINE#ID:content)
+								const hashlineContent = formatHashLines(selectedContent, startLineDisplay);
 
 								// Apply truncation (respects both line and byte limits)
 								const truncation = truncateHead(hashlineContent);

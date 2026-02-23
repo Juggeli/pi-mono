@@ -1,45 +1,64 @@
 import { describe, expect, it } from "vitest";
 import {
 	applyHashlineEdits,
+	collectLineRefs,
 	computeLineHash,
 	formatHashLine,
 	formatHashLines,
-	HASH_DICT,
+	getEditLineNumber,
+	HASHLINE_DICT,
 	HASHLINE_PATTERN,
+	HASHLINE_REF_PATTERN,
 	parseLineRef,
 	validateLineRef,
+	validateLineRefs,
 } from "../src/core/tools/hashline.js";
+
+const HASH_RE = /^[ZPMQVRWSNKTXJBYH]{2}$/;
 
 describe("hashline", () => {
 	describe("constants", () => {
-		it("HASH_DICT has 256 entries", () => {
-			expect(HASH_DICT).toHaveLength(256);
+		it("HASHLINE_DICT has 256 entries", () => {
+			expect(HASHLINE_DICT).toHaveLength(256);
 		});
 
-		it("HASH_DICT entries are two-char hex strings", () => {
-			for (const entry of HASH_DICT) {
-				expect(entry).toMatch(/^[0-9a-f]{2}$/);
+		it("HASHLINE_DICT entries are two-char alphabet strings", () => {
+			for (const entry of HASHLINE_DICT) {
+				expect(entry).toMatch(HASH_RE);
 			}
 		});
 
 		it("HASHLINE_PATTERN matches valid hashline format", () => {
-			const match = "42:a3f1c2d4|const x = 1".match(HASHLINE_PATTERN);
+			const hash = computeLineHash(42, "const x = 1");
+			const match = `42#${hash}:const x = 1`.match(HASHLINE_PATTERN);
 			expect(match).not.toBeNull();
 			expect(match![1]).toBe("42");
-			expect(match![2]).toBe("a3f1c2d4");
+			expect(match![2]).toBe(hash);
 			expect(match![3]).toBe("const x = 1");
 		});
 
 		it("HASHLINE_PATTERN does not match invalid format", () => {
 			expect("no:match".match(HASHLINE_PATTERN)).toBeNull();
 			expect("42:xyz|content".match(HASHLINE_PATTERN)).toBeNull();
+			expect("42#ab:content".match(HASHLINE_PATTERN)).toBeNull(); // lowercase not in alphabet
+		});
+
+		it("HASHLINE_REF_PATTERN matches valid refs", () => {
+			const match = "42#ZP".match(HASHLINE_REF_PATTERN);
+			expect(match).not.toBeNull();
+			expect(match![1]).toBe("42");
+			expect(match![2]).toBe("ZP");
+		});
+
+		it("HASHLINE_REF_PATTERN does not match old format", () => {
+			expect("42:a3f1c2d4".match(HASHLINE_REF_PATTERN)).toBeNull();
 		});
 	});
 
 	describe("computeLineHash", () => {
-		it("returns an 8-char hex string", () => {
+		it("returns a 2-char alphabet string", () => {
 			const hash = computeLineHash(1, "hello world");
-			expect(hash).toMatch(/^[0-9a-f]{8}$/);
+			expect(hash).toMatch(HASH_RE);
 		});
 
 		it("is deterministic", () => {
@@ -63,29 +82,54 @@ describe("hashline", () => {
 		it("produces different hashes for different content", () => {
 			const hash1 = computeLineHash(1, "hello");
 			const hash2 = computeLineHash(1, "world");
-			// Very unlikely to collide, but not impossible with 32-bit output
-			// This test documents intent rather than guaranteeing uniqueness
-			expect(hash1).toMatch(/^[0-9a-f]{8}$/);
-			expect(hash2).toMatch(/^[0-9a-f]{8}$/);
+			expect(hash1).toMatch(HASH_RE);
+			expect(hash2).toMatch(HASH_RE);
 		});
 
-		it("first byte of hash is in HASH_DICT", () => {
+		it("hash is in HASHLINE_DICT", () => {
 			const hash = computeLineHash(1, "test content");
-			expect(HASH_DICT).toContain(hash.slice(0, 2));
+			expect(HASHLINE_DICT).toContain(hash);
+		});
+
+		describe("significance-aware seeding", () => {
+			it("meaningful lines get same hash at different positions", () => {
+				const hash1 = computeLineHash(1, "const x = 1");
+				const hash5 = computeLineHash(5, "const x = 1");
+				const hash100 = computeLineHash(100, "const x = 1");
+				expect(hash1).toBe(hash5);
+				expect(hash1).toBe(hash100);
+			});
+
+			it("punctuation-only lines get different hashes at different positions", () => {
+				const hash1 = computeLineHash(1, "}");
+				const hash2 = computeLineHash(2, "}");
+				// With only 256 possible values, some may collide, but these specific
+				// cases should differ due to different seeds
+				expect(hash1).toMatch(HASH_RE);
+				expect(hash2).toMatch(HASH_RE);
+				// The hashes should be different because seed differs
+				expect(hash1).not.toBe(hash2);
+			});
+
+			it("empty lines are position-dependent", () => {
+				const hash1 = computeLineHash(1, "");
+				const hash2 = computeLineHash(2, "");
+				expect(hash1).not.toBe(hash2);
+			});
 		});
 	});
 
 	describe("formatHashLine", () => {
-		it("formats as LINE:HASH|content", () => {
+		it("formats as LINE#ID:content", () => {
 			const result = formatHashLine(5, "const x = 1");
 			const hash = computeLineHash(5, "const x = 1");
-			expect(result).toBe(`5:${hash}|const x = 1`);
+			expect(result).toBe(`5#${hash}:const x = 1`);
 		});
 
 		it("works with empty content", () => {
 			const result = formatHashLine(1, "");
 			const hash = computeLineHash(1, "");
-			expect(result).toBe(`1:${hash}|`);
+			expect(result).toBe(`1#${hash}:`);
 		});
 	});
 
@@ -96,9 +140,9 @@ describe("hashline", () => {
 			const lines = result.split("\n");
 
 			expect(lines).toHaveLength(3);
-			expect(lines[0]).toMatch(/^1:[0-9a-f]{8}\|line one$/);
-			expect(lines[1]).toMatch(/^2:[0-9a-f]{8}\|line two$/);
-			expect(lines[2]).toMatch(/^3:[0-9a-f]{8}\|line three$/);
+			expect(lines[0]).toMatch(/^1#[ZPMQVRWSNKTXJBYH]{2}:line one$/);
+			expect(lines[1]).toMatch(/^2#[ZPMQVRWSNKTXJBYH]{2}:line two$/);
+			expect(lines[2]).toMatch(/^3#[ZPMQVRWSNKTXJBYH]{2}:line three$/);
 		});
 
 		it("respects startLine parameter", () => {
@@ -106,62 +150,53 @@ describe("hashline", () => {
 			const result = formatHashLines(content, 10);
 			const lines = result.split("\n");
 
-			expect(lines[0]).toMatch(/^10:[0-9a-f]{8}\|line a$/);
-			expect(lines[1]).toMatch(/^11:[0-9a-f]{8}\|line b$/);
-		});
-
-		it("supports consistent refs for offset reads with duplicate lines", () => {
-			const allLines = ["header", "}", "}", "tail"];
-			const fullRef = formatHashLines(allLines.join("\n")).split("\n")[2].split("|")[0];
-			const partialRef = formatHashLines(allLines.slice(2).join("\n"), 3, allLines.slice(0, 2))
-				.split("\n")[0]
-				.split("|")[0];
-			expect(partialRef).toBe(fullRef);
+			expect(lines[0]).toMatch(/^10#[ZPMQVRWSNKTXJBYH]{2}:line a$/);
+			expect(lines[1]).toMatch(/^11#[ZPMQVRWSNKTXJBYH]{2}:line b$/);
 		});
 
 		it("returns a usable hashline for empty content", () => {
-			expect(formatHashLines("")).toMatch(/^1:[0-9a-f]{8}\|$/);
+			expect(formatHashLines("")).toMatch(/^1#[ZPMQVRWSNKTXJBYH]{2}:$/);
 		});
 	});
 
 	describe("parseLineRef", () => {
 		it("parses valid line references", () => {
-			const result = parseLineRef("42:a3f1c2d4");
-			expect(result).toEqual({ line: 42, hash: "a3f1c2d4" });
+			const result = parseLineRef("42#ZP");
+			expect(result).toEqual({ line: 42, hash: "ZP" });
 		});
 
 		it("parses single-digit line numbers", () => {
-			const result = parseLineRef("1:ffffffff");
-			expect(result).toEqual({ line: 1, hash: "ffffffff" });
+			const result = parseLineRef("1#MQ");
+			expect(result).toEqual({ line: 1, hash: "MQ" });
 		});
 
 		it("parses large line numbers", () => {
-			const result = parseLineRef("99999:00000000");
-			expect(result).toEqual({ line: 99999, hash: "00000000" });
+			const result = parseLineRef("99999#VR");
+			expect(result).toEqual({ line: 99999, hash: "VR" });
 		});
 
-		it("throws on invalid format - no colon", () => {
+		it("throws on invalid format - no hash separator", () => {
 			expect(() => parseLineRef("42a3")).toThrow(/Invalid line reference format/);
 		});
 
-		it("throws on invalid format - no hash", () => {
-			expect(() => parseLineRef("42:")).toThrow(/Invalid line reference format/);
+		it("throws on invalid format - old colon format", () => {
+			expect(() => parseLineRef("42:a3f1c2d4")).toThrow(/Invalid line reference format/);
 		});
 
-		it("throws on invalid format - 3-char hash", () => {
-			expect(() => parseLineRef("42:abc")).toThrow(/Invalid line reference format/);
+		it("throws on invalid format - lowercase chars", () => {
+			expect(() => parseLineRef("42#zp")).toThrow(/Invalid line reference format/);
 		});
 
-		it("throws on invalid format - 2-char hash", () => {
-			expect(() => parseLineRef("42:ab")).toThrow(/Invalid line reference format/);
-		});
-
-		it("throws on invalid format - non-hex hash", () => {
-			expect(() => parseLineRef("42:zz")).toThrow(/Invalid line reference format/);
+		it("throws on invalid format - wrong alphabet", () => {
+			expect(() => parseLineRef("42#AB")).toThrow(/Invalid line reference format/);
 		});
 
 		it("throws on invalid format - empty string", () => {
 			expect(() => parseLineRef("")).toThrow(/Invalid line reference format/);
+		});
+
+		it("throws on invalid format - 3-char hash", () => {
+			expect(() => parseLineRef("42#ZPM")).toThrow(/Invalid line reference format/);
 		});
 	});
 
@@ -169,43 +204,61 @@ describe("hashline", () => {
 		it("passes for valid line and hash", () => {
 			const lines = ["hello", "world"];
 			const hash = computeLineHash(1, "hello");
-			expect(() => validateLineRef(lines, `1:${hash}`)).not.toThrow();
+			expect(() => validateLineRef(lines, `1#${hash}`)).not.toThrow();
 		});
 
 		it("throws for line number out of bounds (too high)", () => {
 			const lines = ["hello", "world"];
-			expect(() => validateLineRef(lines, "3:00000000")).toThrow(/out of bounds/);
+			expect(() => validateLineRef(lines, "3#ZP")).toThrow(/out of bounds/);
 		});
 
 		it("throws for line number out of bounds (zero)", () => {
 			const lines = ["hello", "world"];
-			expect(() => validateLineRef(lines, "0:00000000")).toThrow(/out of bounds/);
+			expect(() => validateLineRef(lines, "0#ZP")).toThrow(/out of bounds/);
 		});
 
 		it("throws for hash mismatch", () => {
 			const lines = ["hello", "world"];
 			const actualHash = computeLineHash(1, "hello");
-			const wrongHash = actualHash === "00000000" ? "00000001" : "00000000";
-			expect(() => validateLineRef(lines, `1:${wrongHash}`)).toThrow(/Hash mismatch/);
+			const wrongHash = actualHash === "ZP" ? "MQ" : "ZP";
+			expect(() => validateLineRef(lines, `1#${wrongHash}`)).toThrow(/Hash mismatch/);
 		});
 
 		it("includes current content in mismatch error", () => {
 			const lines = ["hello", "world"];
 			const actualHash = computeLineHash(1, "hello");
-			const wrongHash = actualHash === "00000000" ? "00000001" : "00000000";
-			expect(() => validateLineRef(lines, `1:${wrongHash}`)).toThrow(/Current content: "hello"/);
+			const wrongHash = actualHash === "ZP" ? "MQ" : "ZP";
+			expect(() => validateLineRef(lines, `1#${wrongHash}`)).toThrow(/Current content: "hello"/);
 		});
 
-		it("rejects stale references when duplicate-line occupancy changes", () => {
-			const originalRef = formatHashLines("x\n}\n}\ny").split("\n")[1].split("|")[0];
-			const shiftedLines = ["}", "}", "y"];
-			expect(() => validateLineRef(shiftedLines, originalRef)).toThrow(/Hash mismatch/);
+		it("includes corrected ref in mismatch error", () => {
+			const lines = ["hello", "world"];
+			const actualHash = computeLineHash(1, "hello");
+			const wrongHash = actualHash === "ZP" ? "MQ" : "ZP";
+			expect(() => validateLineRef(lines, `1#${wrongHash}`)).toThrow(/Corrected ref: 1#/);
+		});
+	});
+
+	describe("validateLineRefs (batch)", () => {
+		it("passes for all valid refs", () => {
+			const lines = ["hello", "world", "foo"];
+			const refs = [`1#${computeLineHash(1, "hello")}`, `3#${computeLineHash(3, "foo")}`];
+			expect(() => validateLineRefs(lines, refs)).not.toThrow();
+		});
+
+		it("reports all mismatches at once", () => {
+			const lines = ["hello", "world"];
+			const wrongHash1 = computeLineHash(1, "hello") === "ZP" ? "MQ" : "ZP";
+			const wrongHash2 = computeLineHash(2, "world") === "ZP" ? "MQ" : "ZP";
+			expect(() => validateLineRefs(lines, [`1#${wrongHash1}`, `2#${wrongHash2}`])).toThrow(
+				/Hash mismatch for 2 line/,
+			);
 		});
 	});
 
 	describe("applyHashlineEdits", () => {
 		function ref(lineNumber: number, content: string): string {
-			return `${lineNumber}:${computeLineHash(lineNumber, content)}`;
+			return `${lineNumber}#${computeLineHash(lineNumber, content)}`;
 		}
 
 		describe("set_line", () => {
@@ -328,6 +381,90 @@ describe("hashline", () => {
 			});
 		});
 
+		describe("insert_before", () => {
+			it("inserts before a line", () => {
+				const content = "line 1\nline 2\nline 3";
+				const result = applyHashlineEdits(content, [
+					{ type: "insert_before", line: ref(2, "line 2"), text: "inserted" },
+				]);
+				expect(result).toBe("line 1\ninserted\nline 2\nline 3");
+			});
+
+			it("inserts before first line", () => {
+				const content = "line 1\nline 2";
+				const result = applyHashlineEdits(content, [
+					{ type: "insert_before", line: ref(1, "line 1"), text: "new first" },
+				]);
+				expect(result).toBe("new first\nline 1\nline 2");
+			});
+		});
+
+		describe("insert_between", () => {
+			it("inserts between adjacent lines", () => {
+				const content = "line 1\nline 2\nline 3";
+				const result = applyHashlineEdits(content, [
+					{
+						type: "insert_between",
+						after_line: ref(1, "line 1"),
+						before_line: ref(2, "line 2"),
+						text: "middle",
+					},
+				]);
+				expect(result).toBe("line 1\nmiddle\nline 2\nline 3");
+			});
+
+			it("throws for non-adjacent lines", () => {
+				const content = "line 1\nline 2\nline 3";
+				expect(() =>
+					applyHashlineEdits(content, [
+						{
+							type: "insert_between",
+							after_line: ref(1, "line 1"),
+							before_line: ref(3, "line 3"),
+							text: "middle",
+						},
+					]),
+				).toThrow(/not adjacent/);
+			});
+		});
+
+		describe("replace", () => {
+			it("works as an alias for replace_lines", () => {
+				const content = "line 1\nline 2\nline 3\nline 4";
+				const result = applyHashlineEdits(content, [
+					{
+						type: "replace",
+						start_line: ref(2, "line 2"),
+						end_line: ref(3, "line 3"),
+						text: "replaced",
+					},
+				]);
+				expect(result).toBe("line 1\nreplaced\nline 4");
+			});
+		});
+
+		describe("append", () => {
+			it("adds lines at end of file", () => {
+				const content = "line 1\nline 2";
+				const result = applyHashlineEdits(content, [{ type: "append", text: "line 3" }]);
+				expect(result).toBe("line 1\nline 2\nline 3");
+			});
+
+			it("handles multi-line append", () => {
+				const content = "line 1";
+				const result = applyHashlineEdits(content, [{ type: "append", text: "line 2\\nline 3" }]);
+				expect(result).toBe("line 1\nline 2\nline 3");
+			});
+		});
+
+		describe("prepend", () => {
+			it("adds lines at start of file", () => {
+				const content = "line 1\nline 2";
+				const result = applyHashlineEdits(content, [{ type: "prepend", text: "line 0" }]);
+				expect(result).toBe("line 0\nline 1\nline 2");
+			});
+		});
+
 		describe("sorting (bottom-up)", () => {
 			it("applies edits from bottom to top", () => {
 				const content = "line 1\nline 2\nline 3\nline 4";
@@ -368,6 +505,46 @@ describe("hashline", () => {
 				const result = applyHashlineEdits(content, [{ type: "set_line", line: ref(2, ""), text: "filled" }]);
 				expect(result).toBe("line 1\nfilled\nline 3");
 			});
+		});
+	});
+
+	describe("collectLineRefs", () => {
+		function ref(lineNumber: number, content: string): string {
+			return `${lineNumber}#${computeLineHash(lineNumber, content)}`;
+		}
+
+		it("collects refs from various edit types", () => {
+			const edits = [
+				{ type: "set_line" as const, line: ref(1, "a"), text: "b" },
+				{ type: "insert_after" as const, line: ref(2, "c"), text: "d" },
+				{ type: "append" as const, text: "e" },
+			];
+			const refs = collectLineRefs(edits);
+			expect(refs).toHaveLength(2);
+		});
+
+		it("collects both refs from replace_lines", () => {
+			const edits = [{ type: "replace_lines" as const, start_line: ref(1, "a"), end_line: ref(3, "c"), text: "x" }];
+			const refs = collectLineRefs(edits);
+			expect(refs).toHaveLength(2);
+		});
+	});
+
+	describe("getEditLineNumber", () => {
+		function ref(lineNumber: number, content: string): string {
+			return `${lineNumber}#${computeLineHash(lineNumber, content)}`;
+		}
+
+		it("returns line number for set_line", () => {
+			expect(getEditLineNumber({ type: "set_line", line: ref(5, "x"), text: "y" })).toBe(5);
+		});
+
+		it("returns MAX_SAFE_INTEGER for append", () => {
+			expect(getEditLineNumber({ type: "append", text: "x" })).toBe(Number.MAX_SAFE_INTEGER);
+		});
+
+		it("returns 0 for prepend", () => {
+			expect(getEditLineNumber({ type: "prepend", text: "x" })).toBe(0);
 		});
 	});
 });
