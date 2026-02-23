@@ -4,7 +4,6 @@
 
 import type { AgentConfig, AgentFactory, AgentMode } from "../types.js";
 import { createAtlasAgent } from "./atlas.js";
-import { createCodeAgent } from "./code.js";
 import { createExploreAgent } from "./explore.js";
 import { createLibrarianAgent } from "./librarian.js";
 import { createMetisAgent } from "./metis.js";
@@ -12,12 +11,13 @@ import { createMomusAgent } from "./momus.js";
 import { createOracleAgent } from "./oracle.js";
 import { createPrometheusAgent } from "./prometheus.js";
 import { createReviewAgent } from "./review.js";
+import { createSisyphusAgent } from "./sisyphus.js";
 import { createSisyphusJuniorAgent } from "./sisyphus-junior.js";
 
 /** All built-in agent factories */
 const BUILTIN_FACTORIES: AgentFactory[] = [
 	createAtlasAgent,
-	createCodeAgent,
+	createSisyphusAgent,
 	createExploreAgent,
 	createLibrarianAgent,
 	createMetisAgent,
