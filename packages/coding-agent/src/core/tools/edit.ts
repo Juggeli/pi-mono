@@ -2,32 +2,29 @@ import type { AgentTool } from "@mariozechner/pi-agent-core";
 import { type Static, Type } from "@sinclair/typebox";
 import { constants } from "fs";
 import { access as fsAccess, readFile as fsReadFile, writeFile as fsWriteFile } from "fs/promises";
+import { dedupeEdits } from "./edit-deduplication.js";
 import { detectLineEnding, generateDiffString, normalizeToLF, restoreLineEndings, stripBom } from "./edit-diff.js";
-import { applyHashlineEdits, type HashlineEdit } from "./hashline.js";
+import { applyHashlineEdits } from "./hashline.js";
+import { normalizeHashlineEdits, type RawHashlineEdit } from "./normalize-edits.js";
 import { resolveToCwd } from "./path-utils.js";
 
-const SetLineSchema = Type.Object({
-	type: Type.Literal("set_line"),
-	line: Type.String({ description: 'Line reference in LINE:HASH format (e.g., "5:a3f1c2d4")' }),
-	text: Type.String({ description: "New content for the line" }),
-});
-
-const ReplaceLinesSchema = Type.Object({
-	type: Type.Literal("replace_lines"),
-	start_line: Type.String({ description: "Start line in LINE:HASH format" }),
-	end_line: Type.String({ description: "End line in LINE:HASH format" }),
-	text: Type.String({ description: "New content to replace the range (use \\n for newlines)" }),
-});
-
-const InsertAfterSchema = Type.Object({
-	type: Type.Literal("insert_after"),
-	line: Type.String({ description: "Line reference in LINE:HASH format" }),
-	text: Type.String({ description: "Content to insert after the line (use \\n for newlines)" }),
+const EditOperationSchema = Type.Object({
+	type: Type.String({
+		description:
+			"Edit type: set_line, replace_lines, insert_after, insert_before, insert_between, replace, append, prepend",
+	}),
+	line: Type.Optional(Type.String({ description: 'Line reference in LINE#ID format (e.g., "5#ZP")' })),
+	start_line: Type.Optional(Type.String({ description: "Start line in LINE#ID format" })),
+	end_line: Type.Optional(Type.String({ description: "End line in LINE#ID format" })),
+	after_line: Type.Optional(Type.String({ description: "After line in LINE#ID format (for insert_between)" })),
+	before_line: Type.Optional(Type.String({ description: "Before line in LINE#ID format (for insert_between)" })),
+	text: Type.Optional(Type.String({ description: "New content (use \\n for newlines)" })),
+	content: Type.Optional(Type.String({ description: "Alias for text" })),
 });
 
 const editSchema = Type.Object({
 	path: Type.String({ description: "Path to the file to edit (relative or absolute)" }),
-	edits: Type.Array(Type.Union([SetLineSchema, ReplaceLinesSchema, InsertAfterSchema]), {
+	edits: Type.Array(EditOperationSchema, {
 		description: "Array of edit operations to apply",
 	}),
 });
@@ -71,32 +68,47 @@ export function createEditTool(cwd: string, options?: EditToolOptions): AgentToo
 	return {
 		name: "edit",
 		label: "edit",
-		description: `Edit files using LINE:HASH references for precise, safe modifications.
+		description: `Edit files using LINE#ID references for precise, safe modifications.
 
-LINE:HASH FORMAT:
-Each line reference must be in "LINE:HASH" format where:
+LINE#ID FORMAT:
+Each line reference must be in "LINE#ID" format where:
 - LINE: 1-based line number
-- HASH: 8-character hex hash of line identity
-- Example: "5:a3f1c2d4" means line 5 with hash "a3f1c2d4"
+- ID: 2-character identifier from the hashline alphabet
+- Example: "5#ZP" means line 5 with ID "ZP"
 
-GETTING HASHES:
-Use the read tool first - it returns lines in "LINE:HASH|content" format.
+GETTING IDs:
+Use the read tool first - it returns lines in "LINE#ID:content" format.
 
-THREE OPERATION TYPES:
+EIGHT OPERATION TYPES:
 
 1. set_line: Replace a single line
-   { "type": "set_line", "line": "5:a3f1c2d4", "text": "const y = 2" }
+   { "type": "set_line", "line": "5#ZP", "text": "const y = 2" }
 
 2. replace_lines: Replace a range of lines (inclusive)
-   { "type": "replace_lines", "start_line": "5:a3f1c2d4", "end_line": "7:b2e4f6a8", "text": "new\\ncontent" }
-   { "type": "replace_lines", "start_line": "5:a3f1c2d4", "end_line": "7:b2e4f6a8", "text": "" } // deletes lines 5-7
+   { "type": "replace_lines", "start_line": "5#ZP", "end_line": "7#VR", "text": "new\\ncontent" }
+   { "type": "replace_lines", "start_line": "5#ZP", "end_line": "7#VR", "text": "" } // deletes lines 5-7
 
 3. insert_after: Insert new lines after a specific line
-   { "type": "insert_after", "line": "5:a3f1c2d4", "text": "console.log('hi')" }
+   { "type": "insert_after", "line": "5#ZP", "text": "console.log('hi')" }
+
+4. insert_before: Insert new lines before a specific line
+   { "type": "insert_before", "line": "5#ZP", "text": "// comment" }
+
+5. insert_between: Insert between two adjacent lines
+   { "type": "insert_between", "after_line": "5#ZP", "before_line": "6#VR", "text": "middle" }
+
+6. replace: Same as replace_lines (alias)
+   { "type": "replace", "start_line": "5#ZP", "end_line": "7#VR", "text": "new content" }
+
+7. append: Add lines at end of file
+   { "type": "append", "text": "// end of file" }
+
+8. prepend: Add lines at start of file
+   { "type": "prepend", "text": "// header" }
 
 HASH MISMATCH HANDLING:
-If the hash doesn't match the current content, the edit fails with a clear error showing current hash.
-Re-read the file to get updated hashes.
+If the ID doesn't match the current content, the edit fails with a clear error showing the corrected ref.
+Re-read the file to get updated IDs.
 
 BOTTOM-UP APPLICATION:
 Edits are automatically sorted and applied from bottom to top (highest line numbers first) to preserve line number references.
@@ -106,7 +118,7 @@ Use \\n in text fields to represent literal newlines (for multi-line replacement
 		parameters: editSchema,
 		execute: async (
 			_toolCallId: string,
-			{ path, edits }: { path: string; edits: HashlineEdit[] },
+			{ path, edits }: { path: string; edits: RawHashlineEdit[] },
 			signal?: AbortSignal,
 		) => {
 			const absolutePath = resolveToCwd(path, cwd);
@@ -152,6 +164,23 @@ Use \\n in text fields to represent literal newlines (for multi-line replacement
 							return;
 						}
 
+						// Normalize flexible edit input to typed edits
+						const normalizedEdits = normalizeHashlineEdits(edits);
+
+						// Deduplicate
+						const { edits: uniqueEdits, duplicatesRemoved } = dedupeEdits(normalizedEdits);
+
+						if (uniqueEdits.length === 0) {
+							if (signal) {
+								signal.removeEventListener("abort", onAbort);
+							}
+							resolve({
+								content: [{ type: "text", text: `No edits to apply to ${path}.` }],
+								details: undefined,
+							});
+							return;
+						}
+
 						// Read the file
 						const buffer = await ops.readFile(absolutePath);
 						const rawContent = buffer.toString("utf-8");
@@ -168,14 +197,22 @@ Use \\n in text fields to represent literal newlines (for multi-line replacement
 						const normalizedContent = normalizeToLF(content);
 
 						// Apply hashline edits
-						const newContent = applyHashlineEdits(normalizedContent, edits);
+						const newContent = applyHashlineEdits(normalizedContent, uniqueEdits);
 
 						// Verify the replacement actually changed something
 						if (normalizedContent === newContent) {
 							if (signal) {
 								signal.removeEventListener("abort", onAbort);
 							}
-							reject(new Error(`No changes made to ${path}. The edits produced identical content.`));
+							resolve({
+								content: [
+									{
+										type: "text",
+										text: `No changes resulted from ${uniqueEdits.length} edit(s) to ${path}. The edits produced identical content.`,
+									},
+								],
+								details: undefined,
+							});
 							return;
 						}
 
@@ -198,11 +235,12 @@ Use \\n in text fields to represent literal newlines (for multi-line replacement
 						}
 
 						const diffResult = generateDiffString(normalizedContent, newContent);
+						const dupeNote = duplicatesRemoved > 0 ? ` (${duplicatesRemoved} duplicate(s) removed)` : "";
 						resolve({
 							content: [
 								{
 									type: "text",
-									text: `Successfully applied ${edits.length} edit(s) to ${path}.`,
+									text: `Updated ${path}${dupeNote}`,
 								},
 							],
 							details: { diff: diffResult.diff, firstChangedLine: diffResult.firstChangedLine },

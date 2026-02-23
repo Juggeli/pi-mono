@@ -12,7 +12,7 @@ export type BuiltinToolName = (typeof BUILTIN_TOOL_ORDER)[number];
 export const BUILTIN_TOOL_SHORT_DESCRIPTIONS: Record<BuiltinToolName, string> = {
 	read: "Read file contents",
 	bash: "Execute bash commands (ls, grep, find, etc.)",
-	edit: "Edit files using LINE:HASH references (read file first to get hashes)",
+	edit: "Edit files using LINE#ID references (read file first to get IDs)",
 	write: "Create or overwrite files",
 	grep: "Search file contents for patterns (respects .gitignore)",
 	find: "Find files by glob pattern (respects .gitignore)",
@@ -161,13 +161,15 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions = {}): strin
 	// Read before edit guideline
 	if (hasRead && hasEdit) {
 		addGuideline(
-			"Always read files before editing - the read tool provides LINE:HASH references needed by the edit tool",
+			"Always read files before editing - the read tool provides LINE#ID references needed by the edit tool",
 		);
 	}
 
 	// Edit guideline
 	if (hasEdit) {
-		addGuideline("Use edit with LINE:HASH references from read output (set_line, replace_lines, insert_after)");
+		addGuideline(
+			"Use edit with LINE#ID references from read output (set_line, replace_lines, insert_after, insert_before, insert_between, replace, append, prepend)",
+		);
 	}
 
 	// Write guideline

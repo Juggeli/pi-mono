@@ -16,6 +16,19 @@ export {
 	type EditToolOptions,
 	editTool,
 } from "./edit.js";
+export { dedupeEdits } from "./edit-deduplication.js";
+export { collectLineRefs, getEditLineNumber } from "./edit-ordering.js";
+export {
+	DIFF_PLUS_RE,
+	HASHLINE_PREFIX_RE,
+	restoreLeadingIndent,
+	stripInsertAnchorEcho,
+	stripInsertBeforeEcho,
+	stripInsertBoundaryEcho,
+	stripLinePrefixes,
+	stripRangeBoundaryEcho,
+	toNewLines,
+} from "./edit-text-normalization.js";
 export {
 	createFindTool,
 	type FindOperations,
@@ -33,19 +46,30 @@ export {
 	grepTool,
 } from "./grep.js";
 export {
+	type AppendEdit,
 	applyHashlineEdits,
+	collectLineRefs as collectLineRefsFromEdits,
 	computeLineHash,
 	formatHashLine,
 	formatHashLines,
+	getEditLineNumber as getEditLineNumberFromEdit,
 	HASH_DICT,
+	HASHLINE_DICT,
 	HASHLINE_PATTERN,
+	HASHLINE_REF_PATTERN,
 	type HashlineEdit,
+	type HashlineMismatch,
 	type InsertAfterEdit,
+	type InsertBeforeEdit,
+	type InsertBetweenEdit,
 	type LineRef,
+	type PrependEdit,
 	parseLineRef,
+	type ReplaceEdit,
 	type ReplaceLinesEdit,
 	type SetLineEdit,
 	validateLineRef,
+	validateLineRefs,
 } from "./hashline.js";
 export {
 	createLsTool,
@@ -55,6 +79,7 @@ export {
 	type LsToolOptions,
 	lsTool,
 } from "./ls.js";
+export { normalizeHashlineEdits, type RawHashlineEdit } from "./normalize-edits.js";
 export {
 	createReadTool,
 	type ReadOperations,

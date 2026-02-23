@@ -22,9 +22,9 @@ function getTextOutput(result: any): string {
 	);
 }
 
-/** Compute the LINE:HASH ref for a given line number and content */
+/** Compute the LINE#ID ref for a given line number and content */
 function lineRef(lineNumber: number, content: string): string {
-	return `${lineNumber}:${computeLineHash(lineNumber, content)}`;
+	return `${lineNumber}#${computeLineHash(lineNumber, content)}`;
 }
 
 describe("Coding Agent Tools", () => {
@@ -42,7 +42,7 @@ describe("Coding Agent Tools", () => {
 	});
 
 	describe("read tool", () => {
-		it("should read file contents in LINE:HASH|content format", async () => {
+		it("should read file contents in LINE#ID:content format", async () => {
 			const testFile = join(testDir, "test.txt");
 			const content = "Hello, world!\nLine 2\nLine 3";
 			writeFileSync(testFile, content);
@@ -50,11 +50,11 @@ describe("Coding Agent Tools", () => {
 			const result = await readTool.execute("test-call-1", { path: testFile });
 			const output = getTextOutput(result);
 
-			// Verify hashline format: each line starts with LINE:HASH|
+			// Verify hashline format: each line starts with LINE#ID:
 			const lines = output.split("\n");
-			expect(lines[0]).toMatch(/^1:[0-9a-f]{8}\|Hello, world!$/);
-			expect(lines[1]).toMatch(/^2:[0-9a-f]{8}\|Line 2$/);
-			expect(lines[2]).toMatch(/^3:[0-9a-f]{8}\|Line 3$/);
+			expect(lines[0]).toMatch(/^1#[ZPMQVRWSNKTXJBYH]{2}:Hello, world!$/);
+			expect(lines[1]).toMatch(/^2#[ZPMQVRWSNKTXJBYH]{2}:Line 2$/);
+			expect(lines[2]).toMatch(/^3#[ZPMQVRWSNKTXJBYH]{2}:Line 3$/);
 			// No truncation message since file fits within limits
 			expect(output).not.toContain("Use offset=");
 			expect(result.details).toBeUndefined();
@@ -75,7 +75,7 @@ describe("Coding Agent Tools", () => {
 			const output = getTextOutput(result);
 
 			// Should have hashline-prefixed lines
-			expect(output).toMatch(/^1:[0-9a-f]{8}\|Line 1$/m);
+			expect(output).toMatch(/^1#[ZPMQVRWSNKTXJBYH]{2}:Line 1$/m);
 			expect(output).not.toContain("Line 2001");
 			expect(output).toContain("[Showing lines 1-2000 of 2500. Use offset=2001 to continue.]");
 		});
@@ -89,7 +89,7 @@ describe("Coding Agent Tools", () => {
 			const result = await readTool.execute("test-call-4", { path: testFile });
 			const output = getTextOutput(result);
 
-			expect(output).toMatch(/^1:[0-9a-f]{8}\|Line 1:/m);
+			expect(output).toMatch(/^1#[ZPMQVRWSNKTXJBYH]{2}:Line 1:/m);
 			// Should show byte limit message
 			expect(output).toMatch(/\[Showing lines 1-\d+ of 500 \(.* limit\)\. Use offset=\d+ to continue\.\]/);
 		});
@@ -104,8 +104,8 @@ describe("Coding Agent Tools", () => {
 
 			expect(output).not.toContain("Line 50");
 			// Lines should be numbered starting at 51
-			expect(output).toMatch(/^51:[0-9a-f]{8}\|Line 51$/m);
-			expect(output).toMatch(/^100:[0-9a-f]{8}\|Line 100$/m);
+			expect(output).toMatch(/^51#[ZPMQVRWSNKTXJBYH]{2}:Line 51$/m);
+			expect(output).toMatch(/^100#[ZPMQVRWSNKTXJBYH]{2}:Line 100$/m);
 			expect(output).not.toContain("Use offset=");
 		});
 
@@ -117,8 +117,8 @@ describe("Coding Agent Tools", () => {
 			const result = await readTool.execute("test-call-6", { path: testFile, limit: 10 });
 			const output = getTextOutput(result);
 
-			expect(output).toMatch(/^1:[0-9a-f]{8}\|Line 1$/m);
-			expect(output).toMatch(/^10:[0-9a-f]{8}\|Line 10$/m);
+			expect(output).toMatch(/^1#[ZPMQVRWSNKTXJBYH]{2}:Line 1$/m);
+			expect(output).toMatch(/^10#[ZPMQVRWSNKTXJBYH]{2}:Line 10$/m);
 			expect(output).not.toContain("Line 11");
 			expect(output).toContain("[90 more lines in file. Use offset=11 to continue.]");
 		});
@@ -136,8 +136,8 @@ describe("Coding Agent Tools", () => {
 			const output = getTextOutput(result);
 
 			expect(output).not.toContain("Line 40");
-			expect(output).toMatch(/^41:[0-9a-f]{8}\|Line 41$/m);
-			expect(output).toMatch(/^60:[0-9a-f]{8}\|Line 60$/m);
+			expect(output).toMatch(/^41#[ZPMQVRWSNKTXJBYH]{2}:Line 41$/m);
+			expect(output).toMatch(/^60#[ZPMQVRWSNKTXJBYH]{2}:Line 60$/m);
 			expect(output).not.toContain("Line 61");
 			expect(output).toContain("[40 more lines in file. Use offset=61 to continue.]");
 		});
@@ -194,7 +194,7 @@ describe("Coding Agent Tools", () => {
 			const output = getTextOutput(result);
 
 			// Content should be in hashline format
-			expect(output).toMatch(/^1:[0-9a-f]{8}\|definitely not a png$/);
+			expect(output).toMatch(/^1#[ZPMQVRWSNKTXJBYH]{2}:definitely not a png$/);
 			expect(result.content.some((c: any) => c.type === "image")).toBe(false);
 		});
 	});
@@ -232,7 +232,7 @@ describe("Coding Agent Tools", () => {
 				edits: [{ type: "set_line", line: ref, text: "Hello, testing!" }],
 			});
 
-			expect(getTextOutput(result)).toContain("Successfully applied");
+			expect(getTextOutput(result)).toContain("Updated");
 			expect(result.details).toBeDefined();
 			expect(result.details.diff).toBeDefined();
 			expect(result.details.diff).toContain("testing");
@@ -251,7 +251,7 @@ describe("Coding Agent Tools", () => {
 				edits: [{ type: "replace_lines", start_line: startRef, end_line: endRef, text: "replaced" }],
 			});
 
-			expect(getTextOutput(result)).toContain("Successfully applied");
+			expect(getTextOutput(result)).toContain("Updated");
 			const content = readFileSync(testFile, "utf-8");
 			expect(content).toBe("line 1\nreplaced\nline 5\n");
 		});
@@ -266,20 +266,63 @@ describe("Coding Agent Tools", () => {
 				edits: [{ type: "insert_after", line: ref, text: "inserted line" }],
 			});
 
-			expect(getTextOutput(result)).toContain("Successfully applied");
+			expect(getTextOutput(result)).toContain("Updated");
 			const content = readFileSync(testFile, "utf-8");
 			expect(content).toBe("line 1\nline 2\ninserted line\nline 3\n");
+		});
+
+		it("should insert lines using insert_before", async () => {
+			const testFile = join(testDir, "edit-insert-before.txt");
+			writeFileSync(testFile, "line 1\nline 2\nline 3\n");
+
+			const ref = lineRef(2, "line 2");
+			const result = await editTool.execute("test-call-insert-before", {
+				path: testFile,
+				edits: [{ type: "insert_before", line: ref, text: "inserted line" }],
+			});
+
+			expect(getTextOutput(result)).toContain("Updated");
+			const content = readFileSync(testFile, "utf-8");
+			expect(content).toBe("line 1\ninserted line\nline 2\nline 3\n");
+		});
+
+		it("should append lines at end of file", async () => {
+			const testFile = join(testDir, "edit-append.txt");
+			writeFileSync(testFile, "line 1\nline 2\n");
+
+			const result = await editTool.execute("test-call-append", {
+				path: testFile,
+				edits: [{ type: "append", text: "line 3" }],
+			});
+
+			expect(getTextOutput(result)).toContain("Updated");
+			const content = readFileSync(testFile, "utf-8");
+			expect(content).toBe("line 1\nline 2\n\nline 3");
+		});
+
+		it("should prepend lines at start of file", async () => {
+			const testFile = join(testDir, "edit-prepend.txt");
+			writeFileSync(testFile, "line 1\nline 2\n");
+
+			const result = await editTool.execute("test-call-prepend", {
+				path: testFile,
+				edits: [{ type: "prepend", text: "line 0" }],
+			});
+
+			expect(getTextOutput(result)).toContain("Updated");
+			const content = readFileSync(testFile, "utf-8");
+			expect(content).toBe("line 0\nline 1\nline 2\n");
 		});
 
 		it("should fail on hash mismatch", async () => {
 			const testFile = join(testDir, "hash-mismatch.txt");
 			writeFileSync(testFile, "actual content\n");
 
-			// Use a wrong hash
+			// Use a wrong hash format (old format should fail)
 			await expect(
 				editTool.execute("test-call-mismatch", {
 					path: testFile,
-					edits: [{ type: "set_line", line: "1:zz", text: "new" }],
+					edits: [{ type: "set_line", line: "1#AB", text: "new" }],
 				}),
 			).rejects.toThrow(/Invalid line reference format/);
 		});
@@ -290,12 +333,12 @@ describe("Coding Agent Tools", () => {
 
 			// Compute the actual hash, then use a different valid hash
 			const actualHash = computeLineHash(1, "actual content");
-			const wrongHash = actualHash === "00000000" ? "00000001" : "00000000";
+			const wrongHash = actualHash === "ZP" ? "MQ" : "ZP";
 
 			await expect(
 				editTool.execute("test-call-wrong-hash", {
 					path: testFile,
-					edits: [{ type: "set_line", line: `1:${wrongHash}`, text: "new" }],
+					edits: [{ type: "set_line", line: `1#${wrongHash}`, text: "new" }],
 				}),
 			).rejects.toThrow(/Hash mismatch/);
 		});
@@ -304,7 +347,7 @@ describe("Coding Agent Tools", () => {
 			await expect(
 				editTool.execute("test-call-nofile", {
 					path: join(testDir, "nonexistent.txt"),
-					edits: [{ type: "set_line", line: "1:00", text: "x" }],
+					edits: [{ type: "set_line", line: "1#ZP", text: "x" }],
 				}),
 			).rejects.toThrow(/File not found/);
 		});
@@ -319,7 +362,7 @@ describe("Coding Agent Tools", () => {
 				edits: [{ type: "set_line", line: ref, text: "first\\nsecond" }],
 			});
 
-			expect(getTextOutput(result)).toContain("Successfully applied");
+			expect(getTextOutput(result)).toContain("Updated");
 			const content = readFileSync(testFile, "utf-8");
 			expect(content).toBe("line 1\nfirst\nsecond\nline 3\n");
 		});
@@ -338,9 +381,42 @@ describe("Coding Agent Tools", () => {
 				],
 			});
 
-			expect(getTextOutput(result)).toContain("Successfully applied 2 edit(s)");
+			expect(getTextOutput(result)).toContain("Updated");
 			const content = readFileSync(testFile, "utf-8");
 			expect(content).toBe("FIRST\nline 2\nline 3\nFOURTH\n");
+		});
+
+		it("should deduplicate identical edits", async () => {
+			const testFile = join(testDir, "dedup-test.txt");
+			writeFileSync(testFile, "line 1\nline 2\n");
+
+			const ref = lineRef(1, "line 1");
+			const result = await editTool.execute("test-call-dedup", {
+				path: testFile,
+				edits: [
+					{ type: "set_line", line: ref, text: "REPLACED" },
+					{ type: "set_line", line: ref, text: "REPLACED" },
+				],
+			});
+
+			expect(getTextOutput(result)).toContain("1 duplicate(s) removed");
+			const content = readFileSync(testFile, "utf-8");
+			expect(content).toBe("REPLACED\nline 2\n");
+		});
+
+		it("should accept content as alias for text", async () => {
+			const testFile = join(testDir, "content-alias.txt");
+			writeFileSync(testFile, "line 1\nline 2\n");
+
+			const ref = lineRef(1, "line 1");
+			const result = await editTool.execute("test-call-content-alias", {
+				path: testFile,
+				edits: [{ type: "set_line", line: ref, content: "REPLACED" } as any],
+			});
+
+			expect(getTextOutput(result)).toContain("Updated");
+			const content = readFileSync(testFile, "utf-8");
+			expect(content).toBe("REPLACED\nline 2\n");
 		});
 	});
 

@@ -7,6 +7,7 @@ import * as Diff from "diff";
 import { constants } from "fs";
 import { access, readFile } from "fs/promises";
 import { applyHashlineEdits, type HashlineEdit } from "./hashline.js";
+import { normalizeHashlineEdits, type RawHashlineEdit } from "./normalize-edits.js";
 import { resolveToCwd } from "./path-utils.js";
 
 export function detectLineEnding(content: string): "\r\n" | "\n" {
@@ -242,12 +243,15 @@ export interface EditDiffError {
  */
 export async function computeEditDiff(
 	path: string,
-	edits: HashlineEdit[],
+	edits: HashlineEdit[] | RawHashlineEdit[],
 	cwd: string,
 ): Promise<EditDiffResult | EditDiffError> {
 	const absolutePath = resolveToCwd(path, cwd);
 
 	try {
+		// Normalize raw edits to typed edits
+		const normalizedEdits = normalizeHashlineEdits(edits as RawHashlineEdit[]);
+
 		// Check if file exists and is readable
 		try {
 			await access(absolutePath, constants.R_OK);
@@ -264,7 +268,7 @@ export async function computeEditDiff(
 		const normalizedContent = normalizeToLF(content);
 
 		// Apply hashline edits
-		const newContent = applyHashlineEdits(normalizedContent, edits);
+		const newContent = applyHashlineEdits(normalizedContent, normalizedEdits);
 
 		// Check if it would actually change anything
 		if (normalizedContent === newContent) {
