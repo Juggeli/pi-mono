@@ -12,11 +12,11 @@
 
 buildNpmPackage {
   pname = "pi";
-  version = "0.52.12";
+  version = "0.54.2";
 
   src = ./..;
 
-  npmDepsHash = "sha256-pn3Kqf/mEOXvGNELML3NN4DeclZMtEzWpQIN+ud0W6M=";
+  npmDepsHash = "sha256-z0YDNr6JMeNat76V5ClZ7g2t/BS4JQjUue50oSxGEgA=";
 
   npmFlags = [ "--ignore-scripts" ];
 
