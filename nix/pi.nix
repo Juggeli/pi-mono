@@ -16,7 +16,7 @@ buildNpmPackage {
 
   src = ./..;
 
-  npmDepsHash = "sha256-z0YDNr6JMeNat76V5ClZ7g2t/BS4JQjUue50oSxGEgA=";
+  npmDepsHash = "sha256-CG6iLtu0VKAd5ynSQnKyCXFXP7JXctkE+R9zop83nCE=";
 
   npmFlags = [ "--ignore-scripts" ];
 
