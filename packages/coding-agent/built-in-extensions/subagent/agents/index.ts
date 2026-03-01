@@ -16,8 +16,8 @@ import { createSisyphusJuniorAgent } from "./sisyphus-junior.js";
 
 /** All built-in agent factories */
 const BUILTIN_FACTORIES: AgentFactory[] = [
-	createAtlasAgent,
 	createSisyphusAgent,
+	createAtlasAgent,
 	createExploreAgent,
 	createLibrarianAgent,
 	createMetisAgent,
