@@ -14,6 +14,8 @@ export const createOracleAgent: AgentFactory = () => ({
 	description:
 		"Strategic technical advisor — hard debugging, architecture decisions, complex tradeoffs, and self-review. Read-only.",
 	mode: "subagent",
+	model: "openai-codex/gpt-5.2",
+	thinkingLevel: "high",
 	systemPrompt: [
 		"You are Oracle — a read-only strategic technical advisor. You analyze hard problems, evaluate tradeoffs, and give actionable recommendations. You never write or edit code directly.",
 		"",
