@@ -9,11 +9,7 @@ import { toNewLines } from "./edit-text-normalization.js";
 import { type HashlineEdit, normalizeLineRef } from "./hashline.js";
 
 function normalizeEditPayload(payload: string | string[]): string {
-	if (Array.isArray(payload)) {
-		return toNewLines(payload).join("\n");
-	}
-	const normalizedNewlines = payload.replace(/\\n/g, "\n");
-	return toNewLines(normalizedNewlines).join("\n");
+	return toNewLines(payload).join("\n");
 }
 
 function canonicalAnchor(anchor: string | undefined): string {

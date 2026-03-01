@@ -43,7 +43,7 @@ export const HASHLINE_PATTERN = /^(\d+)#([ZPMQVRWSNKTXJBYH]{2})\|(.*)$/;
 export const HASHLINE_REF_PATTERN = /^([0-9]+)#([ZPMQVRWSNKTXJBYH]{2})$/;
 
 const MISMATCH_CONTEXT = 2;
-const LINE_REF_EXTRACT_PATTERN = /([0-9]+#[ZPMQVRWSNKTXJBYH]{2})(?:[|\s]|$)/;
+const LINE_REF_EXTRACT_PATTERN = /([0-9]+#[ZPMQVRWSNKTXJBYH]{2})/;
 
 // ============================================================================
 // xxHash32 (pure JS implementation matching Bun.hash.xxHash32)
@@ -254,20 +254,14 @@ export interface HashlineMismatch {
 export class HashlineMismatchError extends Error {
 	readonly remaps: ReadonlyMap<string, string>;
 
-	constructor(
-		private readonly mismatches: HashlineMismatch[],
-		private readonly fileLines: string[],
-		refs?: string[],
-	) {
+	constructor(mismatches: HashlineMismatch[], fileLines: string[]) {
 		super(HashlineMismatchError.formatMessage(mismatches, fileLines));
 		this.name = "HashlineMismatchError";
 
 		const remaps = new Map<string, string>();
-		for (let i = 0; i < mismatches.length; i++) {
-			const mismatch = mismatches[i];
+		for (const mismatch of mismatches) {
 			const actual = computeLineHash(mismatch.line, fileLines[mismatch.line - 1] ?? "");
-			const sourceRef = refs?.[i] ?? `${mismatch.line}#${mismatch.expected}`;
-			remaps.set(sourceRef, `${mismatch.line}#${actual}`);
+			remaps.set(`${mismatch.line}#${mismatch.expected}`, `${mismatch.line}#${actual}`);
 		}
 		this.remaps = remaps;
 	}
@@ -283,11 +277,10 @@ export class HashlineMismatchError extends Error {
 			for (let line = low; line <= high; line++) displayLines.add(line);
 		}
 
-		const mismatchCount = mismatchByLine.size;
 		const sortedLines = [...displayLines].sort((a, b) => a - b);
 		const output: string[] = [];
 		output.push(
-			`${mismatchCount} line${mismatchCount > 1 ? "s have" : " has"} changed since last read. ` +
+			`${mismatches.length} line${mismatches.length > 1 ? "s have" : " has"} changed since last read. ` +
 				"Use updated {line_number}#{hash_id} references below (>>> marks changed lines).",
 		);
 		output.push("");
@@ -307,19 +300,10 @@ export class HashlineMismatchError extends Error {
 
 		return output.join("\n");
 	}
-
-	getMismatches(): HashlineMismatch[] {
-		return [...this.mismatches];
-	}
-
-	getFileLines(): string[] {
-		return [...this.fileLines];
-	}
 }
 
 function suggestLineForHash(ref: string, lines: string[]): string | null {
-	const normalized = normalizeLineRef(ref);
-	const hashMatch = normalized.match(/#([ZPMQVRWSNKTXJBYH]{2})$/);
+	const hashMatch = ref.trim().match(/#([ZPMQVRWSNKTXJBYH]{2})$/);
 	if (!hashMatch) return null;
 
 	const hash = hashMatch[1];
@@ -355,7 +339,7 @@ export function validateLineRef(lines: string[], ref: string): void {
 	const currentHash = computeLineHash(line, content);
 
 	if (currentHash !== hash) {
-		throw new HashlineMismatchError([{ line, expected: hash }], lines, [ref]);
+		throw new HashlineMismatchError([{ line, expected: hash }], lines);
 	}
 }
 
@@ -365,7 +349,6 @@ export function validateLineRef(lines: string[], ref: string): void {
  */
 export function validateLineRefs(lines: string[], refs: string[]): void {
 	const mismatches: HashlineMismatch[] = [];
-	const mismatchRefs: string[] = [];
 
 	for (const ref of refs) {
 		const { line, hash } = parseLineRefWithHint(ref, lines);
@@ -378,22 +361,17 @@ export function validateLineRefs(lines: string[], refs: string[]): void {
 		const currentHash = computeLineHash(line, content);
 		if (currentHash !== hash) {
 			mismatches.push({ line, expected: hash });
-			mismatchRefs.push(ref);
 		}
 	}
 
 	if (mismatches.length > 0) {
-		throw new HashlineMismatchError(mismatches, lines, mismatchRefs);
+		throw new HashlineMismatchError(mismatches, lines);
 	}
 }
 
 // ============================================================================
 // Edit Operations
 // ============================================================================
-
-function unescapeNewlines(text: string): string {
-	return text.replace(/\\n/g, "\n");
-}
 
 /** Extract the primary sort key (line number) for bottom-up ordering */
 export function getEditLineNumber(edit: HashlineEdit): number {
@@ -486,9 +464,6 @@ export interface HashlineApplyReport {
 
 /** Resolve lines from edit.lines field */
 function resolveLines(input: string | string[]): string[] {
-	if (typeof input === "string") {
-		return toNewLines(unescapeNewlines(input));
-	}
 	return toNewLines(input);
 }
 

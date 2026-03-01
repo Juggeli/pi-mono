@@ -227,8 +227,9 @@ describe("hashline", () => {
 			expect(() => parseLineRef("")).toThrow(/Invalid line reference format/);
 		});
 
-		it("throws on invalid format - 3-char hash", () => {
-			expect(() => parseLineRef("42#ZPM")).toThrow(/Invalid line reference format/);
+		it("extracts valid 2-char hash from 3-char suffix", () => {
+			const result = parseLineRef("42#ZPM");
+			expect(result).toEqual({ line: 42, hash: "ZP" });
 		});
 	});
 
@@ -287,10 +288,10 @@ describe("hashline", () => {
 			expect(() => validateLineRefs(lines, [`LINE#${hash}`])).toThrow(new RegExp(`1#${hash}`));
 		});
 
-		it("reports unique changed-line count when duplicate refs point to same line", () => {
+		it("reports raw mismatch count when duplicate refs point to same line", () => {
 			const lines = ["hello", "world"];
 			const wrongHash = computeLineHash(1, "hello") === "ZP" ? "MQ" : "ZP";
-			expect(() => validateLineRefs(lines, [`1#${wrongHash}`, `1#${wrongHash}`])).toThrow(/1 line has changed/i);
+			expect(() => validateLineRefs(lines, [`1#${wrongHash}`, `1#${wrongHash}`])).toThrow(/2 lines have changed/i);
 		});
 	});
 
@@ -346,17 +347,29 @@ describe("hashline", () => {
 				expect(result.content).toBe("line 1\nreplaced\nline 3");
 			});
 
-			it("handles multi-line replacement text with \\n", () => {
+			it("handles multi-line replacement text with real newlines", () => {
 				const content = "line 1\nline 2\nline 3";
 				const result = applyHashlineEdits(content, [
 					{
 						op: "replace",
 						pos: ref(2, "line 2"),
 						end: ref(2, "line 2"),
-						lines: "a\\nb\\nc",
+						lines: "a\nb\nc",
 					},
 				]);
 				expect(result.content).toBe("line 1\na\nb\nc\nline 3");
+			});
+
+			it("preserves literal backslash-n in string text", () => {
+				const content = "line 1\nline 2\nline 3";
+				const result = applyHashlineEdits(content, [
+					{
+						op: "replace",
+						pos: ref(2, "line 2"),
+						lines: "join(\\n)",
+					},
+				]);
+				expect(result.content).toBe("line 1\njoin(\\n)\nline 3");
 			});
 
 			it("handles lines as array", () => {
@@ -426,9 +439,9 @@ describe("hashline", () => {
 				expect(result.content).toBe("line 1\nline 2\nnew last");
 			});
 
-			it("handles multi-line insert with \\n", () => {
+			it("handles multi-line insert with real newlines", () => {
 				const content = "line 1\nline 2";
-				const result = applyHashlineEdits(content, [{ op: "append", pos: ref(1, "line 1"), lines: "a\\nb" }]);
+				const result = applyHashlineEdits(content, [{ op: "append", pos: ref(1, "line 1"), lines: "a\nb" }]);
 				expect(result.content).toBe("line 1\na\nb\nline 2");
 			});
 		});
@@ -456,7 +469,7 @@ describe("hashline", () => {
 
 			it("handles multi-line append", () => {
 				const content = "line 1";
-				const result = applyHashlineEdits(content, [{ op: "append", lines: "line 2\\nline 3" }]);
+				const result = applyHashlineEdits(content, [{ op: "append", lines: "line 2\nline 3" }]);
 				expect(result.content).toBe("line 1\nline 2\nline 3");
 			});
 
