@@ -277,7 +277,7 @@ export async function computeEditDiff(
 		const normalizedContent = normalizeToLF(content);
 
 		// Apply hashline edits
-		const newContent = applyHashlineEdits(normalizedContent, uniqueEdits);
+		const { content: newContent } = applyHashlineEdits(normalizedContent, uniqueEdits);
 
 		// Check if it would actually change anything
 		if (normalizedContent === newContent) {

@@ -121,17 +121,35 @@ export function stripInsertBoundaryEcho(afterContent: string, beforeContent: str
 }
 
 /**
- * Strip echoed boundary lines from replace_lines/replace replacement text.
- * If the first line matches start and last matches end, remove them.
+ * Strip echoed context lines from replace_lines/replace replacement text.
+ * Checks if replacement echoes the lines *before* and *after* the replaced range
+ * (context lines outside the range, not the replaced lines themselves).
  */
-export function stripRangeBoundaryEcho(startContent: string, endContent: string, lines: string[]): string[] {
-	if (lines.length < 2) return lines;
-	let result = lines;
-	if (equalsIgnoringWhitespace(result[0], startContent)) {
-		result = result.slice(1);
+export function stripRangeBoundaryEcho(
+	fileLines: string[],
+	startLine: number,
+	endLine: number,
+	newLines: string[],
+): string[] {
+	const replacedCount = endLine - startLine + 1;
+	if (newLines.length <= 1 || newLines.length <= replacedCount) {
+		return newLines;
 	}
-	if (result.length > 0 && equalsIgnoringWhitespace(result[result.length - 1], endContent)) {
-		result = result.slice(0, -1);
+
+	let out = newLines;
+	const beforeIdx = startLine - 2;
+	if (beforeIdx >= 0 && equalsIgnoringWhitespace(out[0], fileLines[beforeIdx])) {
+		out = out.slice(1);
 	}
-	return result;
+
+	const afterIdx = endLine;
+	if (
+		afterIdx < fileLines.length &&
+		out.length > 0 &&
+		equalsIgnoringWhitespace(out[out.length - 1], fileLines[afterIdx])
+	) {
+		out = out.slice(0, -1);
+	}
+
+	return out;
 }

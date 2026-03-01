@@ -206,18 +206,19 @@ Use \\n in text fields to represent literal newlines (for multi-line replacement
 						const normalizedContent = normalizeToLF(content);
 
 						// Apply hashline edits
-						const newContent = applyHashlineEdits(normalizedContent, uniqueEdits);
+						const { content: newContent, noopEdits } = applyHashlineEdits(normalizedContent, uniqueEdits);
 
 						// Verify the replacement actually changed something
 						if (normalizedContent === newContent) {
 							if (signal) {
 								signal.removeEventListener("abort", onAbort);
 							}
+							const noopNote = noopEdits > 0 ? ` (${noopEdits} no-op edit(s))` : "";
 							resolve({
 								content: [
 									{
 										type: "text",
-										text: `No changes resulted from ${uniqueEdits.length} edit(s) to ${path}. The edits produced identical content.`,
+										text: `No changes resulted from ${uniqueEdits.length} edit(s) to ${path}. The edits produced identical content.${noopNote}`,
 									},
 								],
 								details: undefined,

@@ -297,7 +297,7 @@ describe("hashline", () => {
 				const result = applyHashlineEdits(content, [
 					{ type: "set_line", line: ref(2, "line 2"), text: "replaced" },
 				]);
-				expect(result).toBe("line 1\nreplaced\nline 3");
+				expect(result.content).toBe("line 1\nreplaced\nline 3");
 			});
 
 			it("replaces first line", () => {
@@ -305,7 +305,7 @@ describe("hashline", () => {
 				const result = applyHashlineEdits(content, [
 					{ type: "set_line", line: ref(1, "first"), text: "new first" },
 				]);
-				expect(result).toBe("new first\nsecond");
+				expect(result.content).toBe("new first\nsecond");
 			});
 
 			it("replaces last line", () => {
@@ -313,7 +313,7 @@ describe("hashline", () => {
 				const result = applyHashlineEdits(content, [
 					{ type: "set_line", line: ref(2, "second"), text: "new second" },
 				]);
-				expect(result).toBe("first\nnew second");
+				expect(result.content).toBe("first\nnew second");
 			});
 		});
 
@@ -328,7 +328,7 @@ describe("hashline", () => {
 						text: "replaced",
 					},
 				]);
-				expect(result).toBe("line 1\nreplaced\nline 5");
+				expect(result.content).toBe("line 1\nreplaced\nline 5");
 			});
 
 			it("replaces a single line range (start == end)", () => {
@@ -341,7 +341,7 @@ describe("hashline", () => {
 						text: "replaced",
 					},
 				]);
-				expect(result).toBe("line 1\nreplaced\nline 3");
+				expect(result.content).toBe("line 1\nreplaced\nline 3");
 			});
 
 			it("handles multi-line replacement text with \\n", () => {
@@ -354,7 +354,7 @@ describe("hashline", () => {
 						text: "a\\nb\\nc",
 					},
 				]);
-				expect(result).toBe("line 1\na\nb\nc\nline 3");
+				expect(result.content).toBe("line 1\na\nb\nc\nline 3");
 			});
 
 			it("deletes the target range when replacement text is empty", () => {
@@ -367,7 +367,7 @@ describe("hashline", () => {
 						text: "",
 					},
 				]);
-				expect(result).toBe("line 1");
+				expect(result.content).toBe("line 1");
 			});
 
 			it("throws for invalid range (start > end)", () => {
@@ -391,7 +391,7 @@ describe("hashline", () => {
 				const result = applyHashlineEdits(content, [
 					{ type: "insert_after", line: ref(2, "line 2"), text: "inserted" },
 				]);
-				expect(result).toBe("line 1\nline 2\ninserted\nline 3");
+				expect(result.content).toBe("line 1\nline 2\ninserted\nline 3");
 			});
 
 			it("inserts after last line", () => {
@@ -399,7 +399,7 @@ describe("hashline", () => {
 				const result = applyHashlineEdits(content, [
 					{ type: "insert_after", line: ref(2, "line 2"), text: "new last" },
 				]);
-				expect(result).toBe("line 1\nline 2\nnew last");
+				expect(result.content).toBe("line 1\nline 2\nnew last");
 			});
 
 			it("handles multi-line insert with \\n", () => {
@@ -407,7 +407,7 @@ describe("hashline", () => {
 				const result = applyHashlineEdits(content, [
 					{ type: "insert_after", line: ref(1, "line 1"), text: "a\\nb" },
 				]);
-				expect(result).toBe("line 1\na\nb\nline 2");
+				expect(result.content).toBe("line 1\na\nb\nline 2");
 			});
 		});
 
@@ -417,7 +417,7 @@ describe("hashline", () => {
 				const result = applyHashlineEdits(content, [
 					{ type: "insert_before", line: ref(2, "line 2"), text: "inserted" },
 				]);
-				expect(result).toBe("line 1\ninserted\nline 2\nline 3");
+				expect(result.content).toBe("line 1\ninserted\nline 2\nline 3");
 			});
 
 			it("inserts before first line", () => {
@@ -425,7 +425,7 @@ describe("hashline", () => {
 				const result = applyHashlineEdits(content, [
 					{ type: "insert_before", line: ref(1, "line 1"), text: "new first" },
 				]);
-				expect(result).toBe("new first\nline 1\nline 2");
+				expect(result.content).toBe("new first\nline 1\nline 2");
 			});
 		});
 
@@ -440,7 +440,7 @@ describe("hashline", () => {
 						text: "middle",
 					},
 				]);
-				expect(result).toBe("line 1\nmiddle\nline 2\nline 3");
+				expect(result.content).toBe("line 1\nmiddle\nline 2\nline 3");
 			});
 
 			it("throws for non-adjacent lines", () => {
@@ -469,7 +469,7 @@ describe("hashline", () => {
 						text: "replaced",
 					},
 				]);
-				expect(result).toBe("line 1\nreplaced\nline 4");
+				expect(result.content).toBe("line 1\nreplaced\nline 4");
 			});
 		});
 
@@ -477,13 +477,13 @@ describe("hashline", () => {
 			it("adds lines at end of file", () => {
 				const content = "line 1\nline 2";
 				const result = applyHashlineEdits(content, [{ type: "append", text: "line 3" }]);
-				expect(result).toBe("line 1\nline 2\nline 3");
+				expect(result.content).toBe("line 1\nline 2\nline 3");
 			});
 
 			it("handles multi-line append", () => {
 				const content = "line 1";
 				const result = applyHashlineEdits(content, [{ type: "append", text: "line 2\\nline 3" }]);
-				expect(result).toBe("line 1\nline 2\nline 3");
+				expect(result.content).toBe("line 1\nline 2\nline 3");
 			});
 		});
 
@@ -491,7 +491,7 @@ describe("hashline", () => {
 			it("adds lines at start of file", () => {
 				const content = "line 1\nline 2";
 				const result = applyHashlineEdits(content, [{ type: "prepend", text: "line 0" }]);
-				expect(result).toBe("line 0\nline 1\nline 2");
+				expect(result.content).toBe("line 0\nline 1\nline 2");
 			});
 		});
 
@@ -503,7 +503,7 @@ describe("hashline", () => {
 					{ type: "set_line", line: ref(1, "line 1"), text: "FIRST" },
 					{ type: "set_line", line: ref(4, "line 4"), text: "FOURTH" },
 				]);
-				expect(result).toBe("FIRST\nline 2\nline 3\nFOURTH");
+				expect(result.content).toBe("FIRST\nline 2\nline 3\nFOURTH");
 			});
 
 			it("preserves line numbers when inserting bottom-up", () => {
@@ -512,7 +512,7 @@ describe("hashline", () => {
 					{ type: "insert_after", line: ref(1, "line 1"), text: "after 1" },
 					{ type: "insert_after", line: ref(3, "line 3"), text: "after 3" },
 				]);
-				expect(result).toBe("line 1\nafter 1\nline 2\nline 3\nafter 3");
+				expect(result.content).toBe("line 1\nafter 1\nline 2\nline 3\nafter 3");
 			});
 
 			it("applies replacement before insertion when both target same line", () => {
@@ -521,7 +521,9 @@ describe("hashline", () => {
 					{ type: "insert_before", line: ref(2, "line 2"), text: "before line 2" },
 					{ type: "set_line", line: ref(2, "line 2"), text: "modified line 2" },
 				]);
-				expect(result).toBe(["line 1", "before line 2", "modified line 2", "line 3"].join(String.fromCharCode(10)));
+				expect(result.content).toBe(
+					["line 1", "before line 2", "modified line 2", "line 3"].join(String.fromCharCode(10)),
+				);
 			});
 
 			it("throws on overlapping range edits", () => {
@@ -548,7 +550,7 @@ describe("hashline", () => {
 		describe("edge cases", () => {
 			it("returns unchanged content for empty edits array", () => {
 				const content = "hello\nworld";
-				expect(applyHashlineEdits(content, [])).toBe(content);
+				expect(applyHashlineEdits(content, []).content).toBe(content);
 			});
 
 			it("handles single-line content", () => {
@@ -556,13 +558,13 @@ describe("hashline", () => {
 				const result = applyHashlineEdits(content, [
 					{ type: "set_line", line: ref(1, "only line"), text: "replaced" },
 				]);
-				expect(result).toBe("replaced");
+				expect(result.content).toBe("replaced");
 			});
 
 			it("handles empty line content", () => {
 				const content = "line 1\n\nline 3";
 				const result = applyHashlineEdits(content, [{ type: "set_line", line: ref(2, ""), text: "filled" }]);
-				expect(result).toBe("line 1\nfilled\nline 3");
+				expect(result.content).toBe("line 1\nfilled\nline 3");
 			});
 		});
 	});
