@@ -4,6 +4,7 @@ import {
 	EXPLORE_RESTRICTIONS,
 	REVIEW_RESTRICTIONS,
 	resolveToolNames,
+	resolveTools,
 	SUBAGENT_DEFAULTS,
 } from "./tool-restrictions.js";
 
@@ -82,5 +83,16 @@ describe("REVIEW_RESTRICTIONS", () => {
 		expect(result).toContain("bash");
 		expect(result).not.toContain("write");
 		expect(result).not.toContain("edit");
+	});
+});
+
+describe("resolveTools", () => {
+	it("wraps bash in read-only mode when requested", async () => {
+		const tools = resolveTools(process.cwd(), EXPLORE_RESTRICTIONS, "read-only");
+		const bashTool = tools.find((tool) => tool.name === "bash");
+		if (!bashTool) throw new Error("bash tool was not resolved");
+		await expect(bashTool.execute("test", { command: "touch /tmp/should-not-exist" })).rejects.toThrow(
+			"Command blocked by read-only bash policy",
+		);
 	});
 });
