@@ -5,129 +5,128 @@
  * maps flexible input shapes to the canonical HashlineEdit union types.
  */
 
-import type {
-	AppendEdit,
-	HashlineEdit,
-	InsertAfterEdit,
-	InsertBeforeEdit,
-	InsertBetweenEdit,
-	PrependEdit,
-	ReplaceEdit,
-	ReplaceLinesEdit,
-	SetLineEdit,
-} from "./hashline.js";
+import type { AppendEdit, HashlineEdit, PrependEdit, ReplaceEdit } from "./hashline.js";
 
 /**
  * Flexible edit shape that accepts all possible field names.
  * The normalization layer resolves these to typed HashlineEdit objects.
  */
 export interface RawHashlineEdit {
-	type: string;
+	op?: string;
+	/** Legacy field: mapped to op */
+	type?: string;
+	pos?: string;
+	end?: string;
+	lines?: string | string[] | null;
+	/** Legacy field: mapped to pos */
 	line?: string;
+	/** Legacy field: mapped to pos */
 	start_line?: string;
+	/** Legacy field: mapped to end */
 	end_line?: string;
-	after_line?: string;
-	before_line?: string;
+	/** Legacy field: mapped to lines */
 	text?: string;
+	/** Legacy field: mapped to lines */
 	content?: string;
 }
 
-/** Get text from a raw edit, trying "text" first then "content" */
-function getText(raw: RawHashlineEdit): string {
-	return raw.text ?? raw.content ?? "";
+/** Normalize a string anchor: trim, return undefined if empty */
+function normalizeAnchor(value: string | undefined | null): string | undefined {
+	if (!value) return undefined;
+	const trimmed = value.trim();
+	return trimmed.length > 0 ? trimmed : undefined;
 }
 
-/** Try multiple field names for a line reference */
-function getLineRef(raw: RawHashlineEdit, ...fields: (keyof RawHashlineEdit)[]): string {
-	for (const field of fields) {
-		const val = raw[field];
-		if (typeof val === "string" && val.length > 0) return val;
+/** Resolve lines from raw edit, checking lines/text/content fields */
+function resolveLines(raw: RawHashlineEdit): string | string[] {
+	if (raw.lines !== undefined && raw.lines !== null) return raw.lines;
+	if (raw.text !== undefined) return raw.text;
+	if (raw.content !== undefined) return raw.content;
+	return [];
+}
+
+/** Resolve the operation name from op or legacy type field */
+function resolveOp(raw: RawHashlineEdit): string {
+	if (raw.op) return raw.op;
+	if (raw.type) {
+		// Map legacy type names to new ops
+		switch (raw.type) {
+			case "set_line":
+				return "replace";
+			case "replace_lines":
+			case "replace":
+				return "replace";
+			case "insert_after":
+				return "append";
+			case "insert_before":
+				return "prepend";
+			case "append":
+				return "append";
+			case "prepend":
+				return "prepend";
+			default:
+				return raw.type;
+		}
 	}
-	throw new Error(`Missing line reference for ${raw.type}. Tried fields: ${fields.join(", ")}`);
+	throw new Error("Missing 'op' field on edit");
+}
+
+/** Resolve pos from pos, line, or start_line */
+function resolvePos(raw: RawHashlineEdit): string | undefined {
+	return normalizeAnchor(raw.pos) ?? normalizeAnchor(raw.line) ?? normalizeAnchor(raw.start_line);
+}
+
+/** Resolve end from end or end_line */
+function resolveEnd(raw: RawHashlineEdit): string | undefined {
+	return normalizeAnchor(raw.end) ?? normalizeAnchor(raw.end_line);
+}
+
+function normalizeReplaceEdit(raw: RawHashlineEdit): ReplaceEdit {
+	const pos = resolvePos(raw);
+	if (!pos) {
+		throw new Error("replace edit requires at least 'pos' anchor");
+	}
+	const end = resolveEnd(raw);
+	const lines = raw.lines === null ? [] : resolveLines(raw);
+	const edit: ReplaceEdit = { op: "replace", pos, lines };
+	if (end) edit.end = end;
+	return edit;
+}
+
+function normalizeAppendEdit(raw: RawHashlineEdit): AppendEdit {
+	const pos = resolvePos(raw);
+	const lines = raw.lines === null ? [] : resolveLines(raw);
+	const edit: AppendEdit = { op: "append", lines };
+	if (pos) edit.pos = pos;
+	return edit;
+}
+
+function normalizePrependEdit(raw: RawHashlineEdit): PrependEdit {
+	const pos = resolvePos(raw);
+	const lines = raw.lines === null ? [] : resolveLines(raw);
+	const edit: PrependEdit = { op: "prepend", lines };
+	if (pos) edit.pos = pos;
+	return edit;
 }
 
 /**
  * Normalize an array of flexible edit objects into typed HashlineEdit objects.
- * Supports alias fallback chains for field resolution.
+ * Supports legacy field names (type, line, start_line, end_line, text, content)
+ * and maps them to the canonical op/pos/end/lines schema.
  */
 export function normalizeHashlineEdits(rawEdits: RawHashlineEdit[]): HashlineEdit[] {
 	return rawEdits.map((raw): HashlineEdit => {
-		switch (raw.type) {
-			case "set_line": {
-				const edit: SetLineEdit = {
-					type: "set_line",
-					line: getLineRef(raw, "line", "start_line"),
-					text: getText(raw),
-				};
-				return edit;
-			}
+		const op = resolveOp(raw);
 
-			case "replace_lines": {
-				const edit: ReplaceLinesEdit = {
-					type: "replace_lines",
-					start_line: getLineRef(raw, "start_line", "line"),
-					end_line: getLineRef(raw, "end_line"),
-					text: getText(raw),
-				};
-				return edit;
-			}
-
-			case "insert_after": {
-				const edit: InsertAfterEdit = {
-					type: "insert_after",
-					line: getLineRef(raw, "line", "after_line", "end_line", "start_line"),
-					text: getText(raw),
-				};
-				return edit;
-			}
-
-			case "insert_before": {
-				const edit: InsertBeforeEdit = {
-					type: "insert_before",
-					line: getLineRef(raw, "line", "before_line", "start_line"),
-					text: getText(raw),
-				};
-				return edit;
-			}
-
-			case "insert_between": {
-				const edit: InsertBetweenEdit = {
-					type: "insert_between",
-					after_line: getLineRef(raw, "after_line", "start_line"),
-					before_line: getLineRef(raw, "before_line", "end_line"),
-					text: getText(raw),
-				};
-				return edit;
-			}
-
-			case "replace": {
-				const edit: ReplaceEdit = {
-					type: "replace",
-					start_line: getLineRef(raw, "start_line", "line"),
-					end_line: getLineRef(raw, "end_line"),
-					text: getText(raw),
-				};
-				return edit;
-			}
-
-			case "append": {
-				const edit: AppendEdit = {
-					type: "append",
-					text: getText(raw),
-				};
-				return edit;
-			}
-
-			case "prepend": {
-				const edit: PrependEdit = {
-					type: "prepend",
-					text: getText(raw),
-				};
-				return edit;
-			}
-
+		switch (op) {
+			case "replace":
+				return normalizeReplaceEdit(raw);
+			case "append":
+				return normalizeAppendEdit(raw);
+			case "prepend":
+				return normalizePrependEdit(raw);
 			default:
-				throw new Error(`Unknown edit type: "${raw.type}"`);
+				throw new Error(`Unknown edit op: "${op}"`);
 		}
 	});
 }

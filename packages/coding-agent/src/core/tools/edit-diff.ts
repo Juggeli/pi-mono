@@ -255,7 +255,7 @@ export async function computeEditDiff(
 		const { edits: uniqueEdits } = dedupeEdits(normalizedEdits);
 
 		const canCreateFromMissingFile =
-			uniqueEdits.length > 0 && uniqueEdits.every((edit) => edit.type === "append" || edit.type === "prepend");
+			uniqueEdits.length > 0 && uniqueEdits.every((edit) => edit.op === "append" || edit.op === "prepend");
 
 		let fileExists = true;
 		try {

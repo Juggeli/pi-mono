@@ -15,7 +15,8 @@ export default function (pi: ExtensionAPI) {
 			return undefined;
 		}
 
-		const path = event.input.path as string;
+		const input = event.input as Record<string, unknown>;
+		const path = (input.filePath ?? input.path ?? "") as string;
 		const isProtected = protectedPaths.some((p) => path.includes(p));
 
 		if (isProtected) {

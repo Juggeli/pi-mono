@@ -1,19 +1,17 @@
 /**
  * Hashline-based edit system.
  *
- * Lines are referenced by "LINE#ID" format (e.g., "5#ZP"), where ID is a 2-char
+ * Lines are referenced by "LINE#ID" format (e.g., "5|ZP"), where ID is a 2-char
  * code from a nibble alphabet. Significance-aware seeding ensures meaningful lines
  * (containing letters/numbers) get position-independent hashes, while punctuation-only
  * lines are seeded with their line number for disambiguation.
  */
 
-import { createHash } from "node:crypto";
 import { autocorrectReplacementLines } from "./autocorrect-replacement-lines.js";
 import {
 	restoreLeadingIndent,
 	stripInsertAnchorEcho,
 	stripInsertBeforeEcho,
-	stripInsertBoundaryEcho,
 	stripRangeBoundaryEcho,
 	toNewLines,
 } from "./edit-text-normalization.js";
@@ -38,14 +36,91 @@ export const HASHLINE_DICT: readonly string[] = (() => {
 /** @deprecated Use HASHLINE_DICT instead */
 export const HASH_DICT = HASHLINE_DICT;
 
-/** Regex to parse hashline-formatted output: "LINE#ID:content" */
-export const HASHLINE_PATTERN = /^(\d+)#([ZPMQVRWSNKTXJBYH]{2}):(.*)$/;
+/** Regex to parse hashline-formatted output: "LINE#ID|content" */
+export const HASHLINE_PATTERN = /^(\d+)#([ZPMQVRWSNKTXJBYH]{2})\|(.*)$/;
 
 /** Regex to parse a line reference: "LINE#ID" */
 export const HASHLINE_REF_PATTERN = /^([0-9]+)#([ZPMQVRWSNKTXJBYH]{2})$/;
 
 const MISMATCH_CONTEXT = 2;
-const LINE_REF_EXTRACT_PATTERN = /([0-9]+#[ZPMQVRWSNKTXJBYH]{2})(?=[:|\s]|$)/;
+const LINE_REF_EXTRACT_PATTERN = /([0-9]+#[ZPMQVRWSNKTXJBYH]{2})(?:[|\s]|$)/;
+
+// ============================================================================
+// xxHash32 (pure JS implementation matching Bun.hash.xxHash32)
+// ============================================================================
+
+const PRIME32_1 = 0x9e3779b1;
+const PRIME32_2 = 0x85ebca77;
+const PRIME32_3 = 0xc2b2ae3d;
+const PRIME32_4 = 0x27d4eb2f;
+const PRIME32_5 = 0x165667b1;
+
+function rotl32(x: number, r: number): number {
+	return ((x << r) | (x >>> (32 - r))) >>> 0;
+}
+
+function mul32(a: number, b: number): number {
+	return Math.imul(a, b) >>> 0;
+}
+
+function xxHash32(input: Uint8Array, seed: number): number {
+	const len = input.length;
+	let h32: number;
+	let offset = 0;
+
+	if (len >= 16) {
+		let v1 = (seed + PRIME32_1 + PRIME32_2) >>> 0;
+		let v2 = (seed + PRIME32_2) >>> 0;
+		let v3 = (seed + 0) >>> 0;
+		let v4 = (seed - PRIME32_1) >>> 0;
+
+		while (offset <= len - 16) {
+			const k1 =
+				(input[offset] | (input[offset + 1] << 8) | (input[offset + 2] << 16) | (input[offset + 3] << 24)) >>> 0;
+			v1 = mul32(rotl32((v1 + mul32(k1, PRIME32_2)) >>> 0, 13), PRIME32_1) >>> 0;
+			offset += 4;
+
+			const k2 =
+				(input[offset] | (input[offset + 1] << 8) | (input[offset + 2] << 16) | (input[offset + 3] << 24)) >>> 0;
+			v2 = mul32(rotl32((v2 + mul32(k2, PRIME32_2)) >>> 0, 13), PRIME32_1) >>> 0;
+			offset += 4;
+
+			const k3 =
+				(input[offset] | (input[offset + 1] << 8) | (input[offset + 2] << 16) | (input[offset + 3] << 24)) >>> 0;
+			v3 = mul32(rotl32((v3 + mul32(k3, PRIME32_2)) >>> 0, 13), PRIME32_1) >>> 0;
+			offset += 4;
+
+			const k4 =
+				(input[offset] | (input[offset + 1] << 8) | (input[offset + 2] << 16) | (input[offset + 3] << 24)) >>> 0;
+			v4 = mul32(rotl32((v4 + mul32(k4, PRIME32_2)) >>> 0, 13), PRIME32_1) >>> 0;
+			offset += 4;
+		}
+
+		h32 = (rotl32(v1, 1) + rotl32(v2, 7) + rotl32(v3, 12) + rotl32(v4, 18)) >>> 0;
+	} else {
+		h32 = (seed + PRIME32_5) >>> 0;
+	}
+
+	h32 = (h32 + len) >>> 0;
+
+	while (offset <= len - 4) {
+		const k =
+			(input[offset] | (input[offset + 1] << 8) | (input[offset + 2] << 16) | (input[offset + 3] << 24)) >>> 0;
+		h32 = mul32(rotl32((h32 + mul32(k, PRIME32_3)) >>> 0, 17), PRIME32_4) >>> 0;
+		offset += 4;
+	}
+
+	while (offset < len) {
+		h32 = mul32(rotl32((h32 + mul32(input[offset], PRIME32_5)) >>> 0, 11), PRIME32_1) >>> 0;
+		offset += 1;
+	}
+
+	h32 = mul32(h32 ^ (h32 >>> 15), PRIME32_2) >>> 0;
+	h32 = mul32(h32 ^ (h32 >>> 13), PRIME32_3) >>> 0;
+	h32 = (h32 ^ (h32 >>> 16)) >>> 0;
+
+	return h32;
+}
 
 // ============================================================================
 // Types
@@ -56,71 +131,33 @@ export interface LineRef {
 	hash: string;
 }
 
-export interface SetLineEdit {
-	type: "set_line";
-	line: string;
-	text: string;
-}
-
-export interface ReplaceLinesEdit {
-	type: "replace_lines";
-	start_line: string;
-	end_line: string;
-	text: string;
-}
-
-export interface InsertAfterEdit {
-	type: "insert_after";
-	line: string;
-	text: string;
-}
-
-export interface InsertBeforeEdit {
-	type: "insert_before";
-	line: string;
-	text: string;
-}
-
-export interface InsertBetweenEdit {
-	type: "insert_between";
-	after_line: string;
-	before_line: string;
-	text: string;
-}
-
 export interface ReplaceEdit {
-	type: "replace";
-	start_line: string;
-	end_line: string;
-	text: string;
+	op: "replace";
+	pos: string;
+	end?: string;
+	lines: string | string[];
 }
 
 export interface AppendEdit {
-	type: "append";
-	text: string;
+	op: "append";
+	pos?: string;
+	lines: string | string[];
 }
 
 export interface PrependEdit {
-	type: "prepend";
-	text: string;
+	op: "prepend";
+	pos?: string;
+	lines: string | string[];
 }
 
-export type HashlineEdit =
-	| SetLineEdit
-	| ReplaceLinesEdit
-	| InsertAfterEdit
-	| InsertBeforeEdit
-	| InsertBetweenEdit
-	| ReplaceEdit
-	| AppendEdit
-	| PrependEdit;
+export type HashlineEdit = ReplaceEdit | AppendEdit | PrependEdit;
 
 // ============================================================================
 // Hash Computation
 // ============================================================================
 
 function normalizeLineContent(content: string): string {
-	return content.replace(/\s+/g, "");
+	return content.replace(/\r/g, "").replace(/\s+/g, "");
 }
 
 /** Whether content has "significant" characters (letters or numbers) */
@@ -134,14 +171,16 @@ export function computeLineHash(lineNumber: number, content: string): string {
 	// Significant content (letters/digits): seed=0 (position-independent)
 	// Punctuation-only or empty: seed=lineNumber (position-dependent)
 	const seed = hasSignificantContent(stripped) ? 0 : lineNumber;
-	const index = createHash("md5").update(`${seed}\0${stripped}`).digest().readUInt32LE(0) % 256;
+	const data = new TextEncoder().encode(`${seed}\0${stripped}`);
+	const hash = xxHash32(data, 0);
+	const index = hash % 256;
 	return HASHLINE_DICT[index];
 }
 
-/** Format a single line as "LINE#ID:content" */
+/** Format a single line as "LINE#ID|content" */
 export function formatHashLine(lineNumber: number, content: string): string {
 	const hash = computeLineHash(lineNumber, content);
-	return `${lineNumber}#${hash}:${content}`;
+	return `${lineNumber}#${hash}|${content}`;
 }
 
 /** Format all lines of content with hashline prefixes. startLine is 1-indexed (default 1). */
@@ -159,15 +198,14 @@ export function formatHashLines(content: string, startLine = 1): string {
  * Accepts common copied variants like:
  * - ">>> 42#VK"
  * - "42 # VK"
- * - "42#VK:content"
  * - "42#VK|content"
  */
 export function normalizeLineRef(ref: string): string {
 	const originalTrimmed = ref.trim();
 	let trimmed = originalTrimmed;
-	trimmed = trimmed.replace(/^(?:>>>|>>|[+-])\s*/, "");
+	trimmed = trimmed.replace(/^(?:>>>|[+-])\s*/, "");
 	trimmed = trimmed.replace(/\s*#\s*/, "#");
-	trimmed = trimmed.replace(/[:|].*$/, "");
+	trimmed = trimmed.replace(/\|.*$/, "");
 	trimmed = trimmed.trim();
 
 	if (HASHLINE_REF_PATTERN.test(trimmed)) {
@@ -209,11 +247,8 @@ export function parseLineRef(ref: string): LineRef {
 }
 
 export interface HashlineMismatch {
-	ref: string;
 	line: number;
-	expectedHash: string;
-	currentHash: string;
-	content: string;
+	expected: string;
 }
 
 export class HashlineMismatchError extends Error {
@@ -222,14 +257,16 @@ export class HashlineMismatchError extends Error {
 	constructor(
 		private readonly mismatches: HashlineMismatch[],
 		private readonly fileLines: string[],
+		refs?: string[],
 	) {
 		super(HashlineMismatchError.formatMessage(mismatches, fileLines));
 		this.name = "HashlineMismatchError";
 
 		const remaps = new Map<string, string>();
-		for (const mismatch of mismatches) {
+		for (let i = 0; i < mismatches.length; i++) {
+			const mismatch = mismatches[i];
 			const actual = computeLineHash(mismatch.line, fileLines[mismatch.line - 1] ?? "");
-			const sourceRef = mismatch.ref || `${mismatch.line}#${mismatch.expectedHash}`;
+			const sourceRef = refs?.[i] ?? `${mismatch.line}#${mismatch.expected}`;
 			remaps.set(sourceRef, `${mismatch.line}#${actual}`);
 		}
 		this.remaps = remaps;
@@ -264,7 +301,7 @@ export class HashlineMismatchError extends Error {
 
 			const content = fileLines[line - 1] ?? "";
 			const hash = computeLineHash(line, content);
-			const prefixed = `${line}#${hash}:${content}`;
+			const prefixed = `${line}#${hash}|${content}`;
 			output.push(mismatchByLine.has(line) ? `>>> ${prefixed}` : `    ${prefixed}`);
 		}
 
@@ -318,18 +355,7 @@ export function validateLineRef(lines: string[], ref: string): void {
 	const currentHash = computeLineHash(line, content);
 
 	if (currentHash !== hash) {
-		throw new HashlineMismatchError(
-			[
-				{
-					ref,
-					line,
-					expectedHash: hash,
-					currentHash,
-					content,
-				},
-			],
-			lines,
-		);
+		throw new HashlineMismatchError([{ line, expected: hash }], lines, [ref]);
 	}
 }
 
@@ -339,6 +365,7 @@ export function validateLineRef(lines: string[], ref: string): void {
  */
 export function validateLineRefs(lines: string[], refs: string[]): void {
 	const mismatches: HashlineMismatch[] = [];
+	const mismatchRefs: string[] = [];
 
 	for (const ref of refs) {
 		const { line, hash } = parseLineRefWithHint(ref, lines);
@@ -350,12 +377,13 @@ export function validateLineRefs(lines: string[], refs: string[]): void {
 		const content = lines[line - 1];
 		const currentHash = computeLineHash(line, content);
 		if (currentHash !== hash) {
-			mismatches.push({ ref, line, expectedHash: hash, currentHash, content });
+			mismatches.push({ line, expected: hash });
+			mismatchRefs.push(ref);
 		}
 	}
 
 	if (mismatches.length > 0) {
-		throw new HashlineMismatchError(mismatches, lines);
+		throw new HashlineMismatchError(mismatches, lines, mismatchRefs);
 	}
 }
 
@@ -369,23 +397,15 @@ function unescapeNewlines(text: string): string {
 
 /** Extract the primary sort key (line number) for bottom-up ordering */
 export function getEditLineNumber(edit: HashlineEdit): number {
-	switch (edit.type) {
-		case "set_line":
-			return parseLineRef(edit.line).line;
-		case "replace_lines":
-			return parseLineRef(edit.end_line).line;
-		case "replace":
-			return parseLineRef(edit.end_line).line;
-		case "insert_after":
-			return parseLineRef(edit.line).line;
-		case "insert_before":
-			return parseLineRef(edit.line).line;
-		case "insert_between":
-			return parseLineRef(edit.before_line).line;
+	switch (edit.op) {
+		case "replace": {
+			if (edit.end) return parseLineRef(edit.end).line;
+			return parseLineRef(edit.pos).line;
+		}
 		case "append":
-			return Number.MAX_SAFE_INTEGER;
+			return edit.pos ? parseLineRef(edit.pos).line : Number.NEGATIVE_INFINITY;
 		case "prepend":
-			return 0;
+			return edit.pos ? parseLineRef(edit.pos).line : Number.NEGATIVE_INFINITY;
 	}
 }
 
@@ -393,28 +413,16 @@ export function getEditLineNumber(edit: HashlineEdit): number {
 export function collectLineRefs(edits: HashlineEdit[]): string[] {
 	const refs: string[] = [];
 	for (const edit of edits) {
-		switch (edit.type) {
-			case "set_line":
-				refs.push(edit.line);
-				break;
-			case "replace_lines":
-				refs.push(edit.start_line, edit.end_line);
-				break;
+		switch (edit.op) {
 			case "replace":
-				refs.push(edit.start_line, edit.end_line);
-				break;
-			case "insert_after":
-				refs.push(edit.line);
-				break;
-			case "insert_before":
-				refs.push(edit.line);
-				break;
-			case "insert_between":
-				refs.push(edit.after_line, edit.before_line);
+				refs.push(edit.pos);
+				if (edit.end) refs.push(edit.end);
 				break;
 			case "append":
+				if (edit.pos) refs.push(edit.pos);
+				break;
 			case "prepend":
-				// No line refs to validate
+				if (edit.pos) refs.push(edit.pos);
 				break;
 		}
 	}
@@ -424,25 +432,19 @@ export function collectLineRefs(edits: HashlineEdit[]): string[] {
 /** Detect overlapping replace ranges that would produce ambiguous results. */
 export function detectOverlappingRanges(edits: HashlineEdit[]): string | null {
 	const ranges: { start: number; end: number; idx: number }[] = [];
-	const setLineEdits: { line: number; idx: number }[] = [];
+	const singleReplaces: { line: number; idx: number }[] = [];
 
 	for (let i = 0; i < edits.length; i++) {
 		const edit = edits[i];
-		switch (edit.type) {
-			case "replace_lines":
-			case "replace": {
-				const start = parseLineRef(edit.start_line).line;
-				const end = parseLineRef(edit.end_line).line;
+		if (edit.op === "replace") {
+			if (edit.end) {
+				const start = parseLineRef(edit.pos).line;
+				const end = parseLineRef(edit.end).line;
 				if (start > end) continue;
 				ranges.push({ start, end, idx: i });
-				break;
+			} else {
+				singleReplaces.push({ line: parseLineRef(edit.pos).line, idx: i });
 			}
-			case "set_line": {
-				setLineEdits.push({ line: parseLineRef(edit.line).line, idx: i });
-				break;
-			}
-			default:
-				break;
 		}
 	}
 
@@ -456,19 +458,19 @@ export function detectOverlappingRanges(edits: HashlineEdit[]): string | null {
 					`Overlapping range edits detected: ` +
 					`edit ${prev.idx + 1} (lines ${prev.start}-${prev.end}) overlaps with ` +
 					`edit ${curr.idx + 1} (lines ${curr.start}-${curr.end}). ` +
-					"Use set_line for single-line replacements."
+					"Use a single replace for the combined range."
 				);
 			}
 		}
 	}
 
-	for (const single of setLineEdits) {
+	for (const single of singleReplaces) {
 		for (const range of ranges) {
 			if (single.line >= range.start && single.line <= range.end) {
 				return (
 					`Conflicting edits detected: edit ${single.idx + 1} targets line ${single.line}, ` +
 					`which is also modified by edit ${range.idx + 1} (lines ${range.start}-${range.end}). ` +
-					"Use either set_line or range replace for overlapping lines."
+					"Use either single-line or range replace for overlapping lines."
 				);
 			}
 		}
@@ -480,6 +482,14 @@ export function detectOverlappingRanges(edits: HashlineEdit[]): string | null {
 export interface HashlineApplyReport {
 	content: string;
 	noopEdits: number;
+}
+
+/** Resolve lines from edit.lines field */
+function resolveLines(input: string | string[]): string[] {
+	if (typeof input === "string") {
+		return toNewLines(unescapeNewlines(input));
+	}
+	return toNewLines(input);
 }
 
 /** Apply hashline edits to content. Sorts edits bottom-up (highest line first) to preserve line references. */
@@ -501,15 +511,10 @@ export function applyHashlineEdits(content: string, edits: HashlineEdit[]): Hash
 		throw new Error(overlapError);
 	}
 
-	const EDIT_PRECEDENCE: Record<HashlineEdit["type"], number> = {
-		set_line: 0,
-		replace_lines: 0,
+	const EDIT_PRECEDENCE: Record<HashlineEdit["op"], number> = {
 		replace: 0,
-		insert_between: 1,
-		insert_after: 2,
-		insert_before: 3,
-		append: 4,
-		prepend: 5,
+		append: 1,
+		prepend: 2,
 	};
 
 	// Sort bottom-up: highest line numbers first.
@@ -517,7 +522,7 @@ export function applyHashlineEdits(content: string, edits: HashlineEdit[]): Hash
 	const sortedEdits = [...edits].sort((a, b) => {
 		const lineDiff = getEditLineNumber(b) - getEditLineNumber(a);
 		if (lineDiff !== 0) return lineDiff;
-		return EDIT_PRECEDENCE[a.type] - EDIT_PRECEDENCE[b.type];
+		return EDIT_PRECEDENCE[a.op] - EDIT_PRECEDENCE[b.op];
 	});
 
 	let noopEdits = 0;
@@ -525,78 +530,90 @@ export function applyHashlineEdits(content: string, edits: HashlineEdit[]): Hash
 	for (const edit of sortedEdits) {
 		const snapshotBefore = lines.join("\n");
 
-		switch (edit.type) {
-			case "set_line": {
-				const { line } = parseLineRef(edit.line);
-				const originalLine = lines[line - 1] ?? "";
-				let newLines = toNewLines(unescapeNewlines(edit.text));
-				newLines = autocorrectReplacementLines([originalLine], newLines);
-				newLines = newLines.map((entry, idx) => {
-					if (idx !== 0) return entry;
-					return restoreLeadingIndent(originalLine, entry);
-				});
-				lines.splice(line - 1, 1, ...newLines);
-				break;
-			}
-			case "replace_lines":
+		switch (edit.op) {
 			case "replace": {
-				const { line: startLine } = parseLineRef(edit.start_line);
-				const { line: endLine } = parseLineRef(edit.end_line);
-				if (startLine > endLine) {
-					throw new Error(`Invalid range: start line ${startLine} cannot be greater than end line ${endLine}`);
-				}
-				const unescapedText = unescapeNewlines(edit.text);
-				if (unescapedText === "") {
-					lines.splice(startLine - 1, endLine - startLine + 1);
+				if (edit.end) {
+					// Range replace (like old replace_lines)
+					const { line: startLine } = parseLineRef(edit.pos);
+					const { line: endLine } = parseLineRef(edit.end);
+					if (startLine > endLine) {
+						throw new Error(`Invalid range: start line ${startLine} cannot be greater than end line ${endLine}`);
+					}
+					const resolved = resolveLines(edit.lines);
+					if (resolved.length === 1 && resolved[0] === "") {
+						// Empty replacement = deletion
+						lines.splice(startLine - 1, endLine - startLine + 1);
+					} else {
+						const originalRange = lines.slice(startLine - 1, endLine);
+						let newLines = resolved;
+						newLines = stripRangeBoundaryEcho(lines, startLine, endLine, newLines);
+						newLines = autocorrectReplacementLines(originalRange, newLines);
+						newLines = newLines.map((entry, idx) => {
+							if (idx !== 0) return entry;
+							return restoreLeadingIndent(lines[startLine - 1] ?? "", entry);
+						});
+						lines.splice(startLine - 1, endLine - startLine + 1, ...newLines);
+					}
 				} else {
-					const originalRange = lines.slice(startLine - 1, endLine);
-					let newLines = toNewLines(unescapedText);
-					newLines = stripRangeBoundaryEcho(lines, startLine, endLine, newLines);
-					newLines = autocorrectReplacementLines(originalRange, newLines);
+					// Single line replace (like old set_line)
+					const { line } = parseLineRef(edit.pos);
+					const originalLine = lines[line - 1] ?? "";
+					let newLines = resolveLines(edit.lines);
+					newLines = autocorrectReplacementLines([originalLine], newLines);
 					newLines = newLines.map((entry, idx) => {
 						if (idx !== 0) return entry;
-						return restoreLeadingIndent(lines[startLine - 1] ?? "", entry);
+						return restoreLeadingIndent(originalLine, entry);
 					});
-					lines.splice(startLine - 1, endLine - startLine + 1, ...newLines);
+					lines.splice(line - 1, 1, ...newLines);
 				}
-				break;
-			}
-			case "insert_after": {
-				const { line } = parseLineRef(edit.line);
-				const newLines = stripInsertAnchorEcho(lines[line - 1] ?? "", toNewLines(unescapeNewlines(edit.text)));
-				lines.splice(line, 0, ...newLines);
-				break;
-			}
-			case "insert_before": {
-				const { line } = parseLineRef(edit.line);
-				const newLines = stripInsertBeforeEcho(lines[line - 1] ?? "", toNewLines(unescapeNewlines(edit.text)));
-				lines.splice(line - 1, 0, ...newLines);
-				break;
-			}
-			case "insert_between": {
-				const { line: afterLine } = parseLineRef(edit.after_line);
-				const { line: beforeLine } = parseLineRef(edit.before_line);
-				if (beforeLine !== afterLine + 1) {
-					throw new Error(
-						`insert_between requires adjacent lines: after_line ${afterLine} and before_line ${beforeLine} are not adjacent`,
-					);
-				}
-				const newLines = stripInsertBoundaryEcho(
-					lines[afterLine - 1] ?? "",
-					lines[beforeLine - 1] ?? "",
-					toNewLines(unescapeNewlines(edit.text)),
-				);
-				lines.splice(afterLine, 0, ...newLines);
 				break;
 			}
 			case "append": {
-				const newLines = toNewLines(unescapeNewlines(edit.text));
-				lines.push(...newLines);
+				const newLines = resolveLines(edit.lines);
+				if (edit.pos) {
+					// Anchored append = insert after (like old insert_after)
+					const { line } = parseLineRef(edit.pos);
+					const stripped = stripInsertAnchorEcho(lines[line - 1] ?? "", newLines);
+					if (stripped.length === 0) {
+						throw new Error("append: after echo-stripping, no lines remain to insert");
+					}
+					lines.splice(line, 0, ...stripped);
+				} else {
+					// Unanchored append = add to EOF
+					if (newLines.length === 0) {
+						throw new Error("append: lines must not be empty");
+					}
+					if (lines.length === 1 && lines[0] === "") {
+						// Empty file: replace with new content
+						lines.splice(0, 1, ...newLines);
+					} else {
+						lines.push(...newLines);
+					}
+				}
 				break;
 			}
 			case "prepend": {
-				const newLines = toNewLines(unescapeNewlines(edit.text));
-				lines.unshift(...newLines);
+				const newLines = resolveLines(edit.lines);
+				if (edit.pos) {
+					// Anchored prepend = insert before (like old insert_before)
+					const { line } = parseLineRef(edit.pos);
+					const stripped = stripInsertBeforeEcho(lines[line - 1] ?? "", newLines);
+					if (stripped.length === 0) {
+						throw new Error("prepend: after echo-stripping, no lines remain to insert");
+					}
+					lines.splice(line - 1, 0, ...stripped);
+				} else {
+					// Unanchored prepend = add to BOF
+					if (newLines.length === 0) {
+						throw new Error("prepend: lines must not be empty");
+					}
+					if (lines.length === 1 && lines[0] === "") {
+						// Empty file: replace with new content
+						lines.splice(0, 1, ...newLines);
+					} else {
+						lines.unshift(...newLines);
+					}
+				}
 				break;
 			}
 		}

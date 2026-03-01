@@ -167,9 +167,7 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions = {}): strin
 
 	// Edit guideline
 	if (hasEdit) {
-		addGuideline(
-			"Use edit with LINE#ID references from read output (set_line, replace_lines, insert_after, insert_before, insert_between, replace, append, prepend)",
-		);
+		addGuideline("Use edit with LINE#ID references from read output (replace, append, prepend)");
 	}
 
 	// Write guideline

@@ -5,8 +5,8 @@
  * and normalizing various text input formats to line arrays.
  */
 
-/** Regex to detect hashline prefixes in text (LINE#ID: or LINE#ID|) */
-export const HASHLINE_PREFIX_RE = /^\s*(?:>>>|>>)?\s*\d+\s*#\s*[ZPMQVRWSNKTXJBYH]{2}[:|]/;
+/** Regex to detect hashline prefixes in text (LINE#ID|) */
+export const HASHLINE_PREFIX_RE = /^\s*(?:>>>|>>)?\s*\d+\s*#\s*[ZPMQVRWSNKTXJBYH]{2}\|/;
 
 /** Regex to detect unified diff "+" lines (but not +++ headers) */
 export const DIFF_PLUS_RE = /^[+](?![+])/;
@@ -102,22 +102,6 @@ export function stripInsertBeforeEcho(anchorContent: string, lines: string[]): s
 		return lines.slice(0, -1);
 	}
 	return lines;
-}
-
-/**
- * Strip echoed boundary lines from insert_between replacement text.
- * If the first/last lines match the after/before anchors, remove them.
- */
-export function stripInsertBoundaryEcho(afterContent: string, beforeContent: string, lines: string[]): string[] {
-	if (lines.length === 0) return lines;
-	let result = lines;
-	if (equalsIgnoringWhitespace(result[0], afterContent)) {
-		result = result.slice(1);
-	}
-	if (result.length > 0 && equalsIgnoringWhitespace(result[result.length - 1], beforeContent)) {
-		result = result.slice(0, -1);
-	}
-	return result;
 }
 
 /**
