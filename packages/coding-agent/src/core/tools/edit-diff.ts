@@ -6,6 +6,7 @@
 import * as Diff from "diff";
 import { constants } from "fs";
 import { access, readFile } from "fs/promises";
+import { dedupeEdits } from "./edit-deduplication.js";
 import { applyHashlineEdits, type HashlineEdit } from "./hashline.js";
 import { normalizeHashlineEdits, type RawHashlineEdit } from "./normalize-edits.js";
 import { resolveToCwd } from "./path-utils.js";
@@ -129,7 +130,7 @@ export function stripBom(content: string): { bom: string; text: string } {
 export function generateDiffString(
 	oldContent: string,
 	newContent: string,
-	contextLines = 4,
+	contextLines = 3,
 ): { diff: string; firstChangedLine: number | undefined } {
 	const parts = Diff.diffLines(oldContent, newContent);
 	const output: string[] = [];
@@ -251,16 +252,24 @@ export async function computeEditDiff(
 	try {
 		// Normalize raw edits to typed edits
 		const normalizedEdits = normalizeHashlineEdits(edits as RawHashlineEdit[]);
+		const { edits: uniqueEdits } = dedupeEdits(normalizedEdits);
 
-		// Check if file exists and is readable
+		const canCreateFromMissingFile =
+			uniqueEdits.length > 0 && uniqueEdits.every((edit) => edit.type === "append" || edit.type === "prepend");
+
+		let fileExists = true;
 		try {
 			await access(absolutePath, constants.R_OK);
 		} catch {
+			fileExists = false;
+		}
+
+		if (!fileExists && !canCreateFromMissingFile) {
 			return { error: `File not found: ${path}` };
 		}
 
-		// Read the file
-		const rawContent = await readFile(absolutePath, "utf-8");
+		// Read existing file or start from empty content (creation preview)
+		const rawContent = fileExists ? await readFile(absolutePath, "utf-8") : "";
 
 		// Strip BOM before matching
 		const { text: content } = stripBom(rawContent);
@@ -268,7 +277,7 @@ export async function computeEditDiff(
 		const normalizedContent = normalizeToLF(content);
 
 		// Apply hashline edits
-		const newContent = applyHashlineEdits(normalizedContent, normalizedEdits);
+		const newContent = applyHashlineEdits(normalizedContent, uniqueEdits);
 
 		// Check if it would actually change anything
 		if (normalizedContent === newContent) {

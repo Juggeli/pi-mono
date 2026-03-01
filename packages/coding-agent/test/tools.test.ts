@@ -4,6 +4,7 @@ import { join } from "path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { bashTool, createBashTool } from "../src/core/tools/bash.js";
 import { editTool } from "../src/core/tools/edit.js";
+import { computeEditDiff } from "../src/core/tools/edit-diff.js";
 import { findTool } from "../src/core/tools/find.js";
 import { grepTool } from "../src/core/tools/grep.js";
 import { computeLineHash } from "../src/core/tools/hashline.js";
@@ -340,7 +341,7 @@ describe("Coding Agent Tools", () => {
 					path: testFile,
 					edits: [{ type: "set_line", line: `1#${wrongHash}`, text: "new" }],
 				}),
-			).rejects.toThrow(/Hash mismatch/);
+			).rejects.toThrow(/changed since last read/i);
 		});
 
 		it("should fail if file not found", async () => {
@@ -350,6 +351,50 @@ describe("Coding Agent Tools", () => {
 					edits: [{ type: "set_line", line: "1#ZP", text: "x" }],
 				}),
 			).rejects.toThrow(/File not found/);
+		});
+
+		it("should create missing file with append", async () => {
+			const testFile = join(testDir, "created-append.txt");
+
+			const result = await editTool.execute("test-call-create-append", {
+				path: testFile,
+				edits: [{ type: "append", text: "created" }],
+			});
+
+			expect(getTextOutput(result)).toContain("Updated");
+			expect(readFileSync(testFile, "utf-8")).toBe("created");
+		});
+
+		it("should create missing file with prepend", async () => {
+			const testFile = join(testDir, "created-prepend.txt");
+
+			const result = await editTool.execute("test-call-create-prepend", {
+				path: testFile,
+				edits: [{ type: "prepend", text: "created" }],
+			});
+
+			expect(getTextOutput(result)).toContain("Updated");
+			expect(readFileSync(testFile, "utf-8")).toBe("created");
+		});
+
+		it("computeEditDiff should preview missing-file creation for append/prepend", async () => {
+			const testFile = join(testDir, "preview-create.txt");
+
+			const result = await computeEditDiff(testFile, [{ type: "append", text: "created" }], testDir);
+			expect("error" in result).toBe(false);
+			if ("error" in result) {
+				throw new Error(result.error);
+			}
+			expect(result.diff).toContain("created");
+		});
+
+		it("computeEditDiff should still fail on missing file for non-create edits", async () => {
+			const testFile = join(testDir, "preview-missing-set-line.txt");
+			const result = await computeEditDiff(testFile, [{ type: "set_line", line: "1#ZP", text: "x" }], testDir);
+			expect("error" in result).toBe(true);
+			if ("error" in result) {
+				expect(result.error).toContain("File not found");
+			}
 		});
 
 		it("should handle \\n escaping in text", async () => {
@@ -402,6 +447,65 @@ describe("Coding Agent Tools", () => {
 			expect(getTextOutput(result)).toContain("1 duplicate(s) removed");
 			const content = readFileSync(testFile, "utf-8");
 			expect(content).toBe("REPLACED\nline 2\n");
+		});
+
+		it("should deduplicate edits with whitespace-variant anchors", async () => {
+			const testFile = join(testDir, "dedup-anchor-test.txt");
+			writeFileSync(testFile, ["line 1", "line 2", ""].join(String.fromCharCode(10)));
+
+			const hash = computeLineHash(1, "line 1");
+			const canonicalRef = `1#${hash}`;
+			const spacedRef = ` 1 # ${hash} `;
+
+			const result = await editTool.execute("test-call-dedup-anchor", {
+				path: testFile,
+				edits: [
+					{ type: "set_line", line: canonicalRef, text: "REPLACED" },
+					{ type: "set_line", line: spacedRef, text: "REPLACED" },
+				],
+			});
+
+			expect(getTextOutput(result)).toContain("1 duplicate(s) removed");
+			const content = readFileSync(testFile, "utf-8");
+			expect(content).toBe(["REPLACED", "line 2", ""].join(String.fromCharCode(10)));
+		});
+
+		it("should deduplicate replace and replace_lines alias edits", async () => {
+			const testFile = join(testDir, "dedup-replace-alias.txt");
+			writeFileSync(testFile, ["line 1", "line 2", "line 3", ""].join(String.fromCharCode(10)));
+
+			const line2Ref = lineRef(2, "line 2");
+			const result = await editTool.execute("test-call-dedup-replace-alias", {
+				path: testFile,
+				edits: [
+					{ type: "replace_lines", start_line: line2Ref, end_line: line2Ref, text: "updated" },
+					{ type: "replace", start_line: line2Ref, end_line: line2Ref, text: "updated" },
+				],
+			});
+
+			expect(getTextOutput(result)).toContain("1 duplicate(s) removed");
+			expect(readFileSync(testFile, "utf-8")).toBe(
+				["line 1", "updated", "line 3", ""].join(String.fromCharCode(10)),
+			);
+		});
+
+		it("should deduplicate escaped and literal newline payload variants", async () => {
+			const testFile = join(testDir, "dedup-newline-payload.txt");
+			writeFileSync(testFile, ["line 1", "line 2", ""].join(String.fromCharCode(10)));
+
+			const ref = lineRef(1, "line 1");
+			const escapedNewline = `A${String.fromCharCode(92)}nB`;
+			const literalMultiline = ["A", "B"].join(String.fromCharCode(10));
+			const result = await editTool.execute("test-call-dedup-newline-payload", {
+				path: testFile,
+				edits: [
+					{ type: "set_line", line: ref, text: escapedNewline },
+					{ type: "set_line", line: ref, text: literalMultiline },
+				],
+			});
+
+			expect(getTextOutput(result)).toContain("1 duplicate(s) removed");
+			expect(readFileSync(testFile, "utf-8")).toBe(["A", "B", "line 2", ""].join(String.fromCharCode(10)));
 		});
 
 		it("should accept content as alias for text", async () => {
