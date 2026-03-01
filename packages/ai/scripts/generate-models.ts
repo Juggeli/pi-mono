@@ -172,6 +172,80 @@ async function fetchAiGatewayModels(): Promise<Model<any>[]> {
 	}
 }
 
+interface SyntheticModel {
+	id: string;
+	name?: string;
+	input_modalities?: string[];
+	context_length?: number;
+	max_output_length?: number;
+	pricing?: {
+		prompt?: string;
+		completion?: string;
+		input_cache_reads?: string;
+		input_cache_writes?: string;
+	};
+	supported_features?: string[];
+}
+
+async function fetchSyntheticModels(): Promise<Model<any>[]> {
+	try {
+		console.log("Fetching models from Synthetic API...");
+		const response = await fetch("https://api.synthetic.new/openai/v1/models");
+		const data = await response.json();
+
+		const models: Model<any>[] = [];
+		const items = Array.isArray(data.data) ? (data.data as SyntheticModel[]) : [];
+
+		const parsePricing = (value: string | undefined): number => {
+			if (!value) return 0;
+			const cleaned = value.replace("$", "");
+			const parsed = parseFloat(cleaned);
+			return Number.isFinite(parsed) ? parsed : 0;
+		};
+
+		for (const model of items) {
+			// supported_features is null for fireworks/together-backed models;
+			// treat null as tool-capable since Synthetic routes to capable backends.
+			const features = model.supported_features ?? [];
+
+			const input: ("text" | "image")[] = ["text"];
+			if (model.input_modalities?.includes("image")) {
+				input.push("image");
+			}
+
+			// Pricing is $/token, convert to $/million tokens
+			const inputCost = parsePricing(model.pricing?.prompt) * 1_000_000;
+			const outputCost = parsePricing(model.pricing?.completion) * 1_000_000;
+			const cacheReadCost = parsePricing(model.pricing?.input_cache_reads) * 1_000_000;
+			const cacheWriteCost = parsePricing(model.pricing?.input_cache_writes) * 1_000_000;
+
+			models.push({
+				id: model.id,
+				name: model.name || model.id,
+				api: "openai-completions",
+				provider: "synthetic",
+				baseUrl: "https://api.synthetic.new/openai/v1",
+				reasoning: features.includes("reasoning"),
+				input,
+				cost: {
+					input: inputCost,
+					output: outputCost,
+					cacheRead: cacheReadCost,
+					cacheWrite: cacheWriteCost,
+				},
+				contextWindow: model.context_length || 4096,
+				maxTokens: model.max_output_length || 4096,
+			});
+		}
+
+		console.log(`Fetched ${models.length} tool-capable models from Synthetic`);
+		return models;
+	} catch (error) {
+		console.error("Failed to fetch Synthetic models:", error);
+		return [];
+	}
+}
+
 async function loadModelsDevData(): Promise<Model<any>[]> {
 	try {
 		console.log("Fetching models from models.dev API...");
@@ -622,32 +696,6 @@ async function loadModelsDevData(): Promise<Model<any>[]> {
 			}
 		}
 
-		// Process Synthetic models
-		if (data.synthetic?.models) {
-			for (const [modelId, model] of Object.entries(data.synthetic.models)) {
-				const m = model as ModelsDevModel;
-				if (m.tool_call !== true) continue;
-
-				models.push({
-					id: modelId,
-					name: m.name || modelId,
-					api: "openai-completions",
-					provider: "synthetic",
-					baseUrl: "https://api.synthetic.new/openai/v1",
-					reasoning: m.reasoning === true,
-					input: m.modalities?.input?.includes("image") ? ["text", "image"] : ["text"],
-					cost: {
-						input: m.cost?.input || 0,
-						output: m.cost?.output || 0,
-						cacheRead: m.cost?.cache_read || 0,
-						cacheWrite: m.cost?.cache_write || 0,
-					},
-					contextWindow: m.limit?.context || 4096,
-					maxTokens: m.limit?.output || 4096,
-				});
-			}
-		}
-
 		console.log(`Loaded ${models.length} tool-capable models from models.dev`);
 		return models;
 	} catch (error) {
@@ -657,16 +705,18 @@ async function loadModelsDevData(): Promise<Model<any>[]> {
 }
 
 async function generateModels() {
-	// Fetch models from both sources
+	// Fetch models from all sources
 	// models.dev: Anthropic, Google, OpenAI, Groq, Cerebras
 	// OpenRouter: xAI and other providers (excluding Anthropic, Google, OpenAI)
 	// AI Gateway: OpenAI-compatible catalog with tool-capable models
+	// Synthetic: Direct from Synthetic API (models.dev data is stale)
 	const modelsDevModels = await loadModelsDevData();
 	const openRouterModels = await fetchOpenRouterModels();
 	const aiGatewayModels = await fetchAiGatewayModels();
+	const syntheticModels = await fetchSyntheticModels();
 
 	// Combine models (models.dev has priority)
-	const allModels = [...modelsDevModels, ...openRouterModels, ...aiGatewayModels];
+	const allModels = [...modelsDevModels, ...openRouterModels, ...aiGatewayModels, ...syntheticModels];
 
 	// Fix incorrect cache pricing for Claude Opus 4.5 from models.dev
 	// models.dev has 3x the correct pricing (1.5/18.75 instead of 0.5/6.25)
