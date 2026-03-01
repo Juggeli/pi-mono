@@ -14,7 +14,8 @@ import {
 	createReadTool,
 	createWriteTool,
 } from "@mariozechner/pi-coding-agent";
-import type { AgentToolRestrictions } from "./types.js";
+import { createReadOnlyBashTool } from "./read-only-bash.js";
+import type { AgentToolRestrictions, BashPolicy } from "./types.js";
 
 // Each tool factory returns a differently-typed AgentTool, so we use a generic creator type
 type ToolCreator = (cwd: string) => any;
@@ -98,12 +99,18 @@ export const ALL_TOOL_NAMES = Object.keys(TOOL_CREATORS);
  * The base set is all available built-in tools. Tools explicitly set to `false`
  * in the restrictions map are removed. Tools set to `true` or not listed are kept.
  */
-export function resolveTools(cwd: string, restrictions: AgentToolRestrictions) {
+export function resolveTools(cwd: string, restrictions: AgentToolRestrictions, bashPolicy: BashPolicy = "default") {
 	const tools: any[] = [];
 
 	for (const [name, creator] of Object.entries(TOOL_CREATORS)) {
 		// If explicitly denied, skip
 		if (restrictions[name] === false) continue;
+
+		if (name === "bash" && bashPolicy === "read-only") {
+			tools.push(createReadOnlyBashTool(cwd));
+			continue;
+		}
+
 		tools.push(creator(cwd));
 	}
 

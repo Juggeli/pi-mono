@@ -66,7 +66,7 @@ export async function runAgent(
 	}
 
 	// Build filtered tools
-	const tools = resolveTools(cwd, agentConfig.tools);
+	const tools = resolveTools(cwd, agentConfig.tools, agentConfig.bashPolicy ?? "default");
 
 	// Set PI_SUBAGENT to prevent fork-bombing when extensions are loaded
 	if (agentConfig.loadExtensions) {

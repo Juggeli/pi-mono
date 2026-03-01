@@ -85,5 +85,6 @@ export const createExploreAgent: AgentFactory = () => ({
 		"- Keep answers concise. The user wants locations and facts, not essays.",
 	].join("\n"),
 	tools: EXPLORE_RESTRICTIONS,
+	bashPolicy: "read-only",
 	category: "search",
 });

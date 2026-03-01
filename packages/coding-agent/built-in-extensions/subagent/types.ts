@@ -13,6 +13,9 @@ import type { AgentSession, AgentSessionEvent } from "@mariozechner/pi-coding-ag
 /** Agent execution mode — controls where the agent can be used */
 export type AgentMode = "primary" | "subagent" | "all";
 
+/** Bash execution policy for an agent */
+export type BashPolicy = "default" | "read-only";
+
 /**
  * Per-agent tool restrictions.
  * true = allowed, false = denied. Unlisted tools use default (allowed).
@@ -33,6 +36,8 @@ export interface AgentConfig {
 	category?: string;
 	/** When true, load extensions in the child session (gives access to exa_search, grep_code_search, etc.) */
 	loadExtensions?: boolean;
+	/** Optional bash safety profile. Use "read-only" for allowlisted commands only. */
+	bashPolicy?: BashPolicy;
 }
 
 /** Factory function that produces an AgentConfig */
