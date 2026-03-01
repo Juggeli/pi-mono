@@ -1,7 +1,13 @@
 import type { AgentTool } from "@mariozechner/pi-agent-core";
 import { type Static, Type } from "@sinclair/typebox";
 import { constants } from "fs";
-import { access as fsAccess, readFile as fsReadFile, writeFile as fsWriteFile } from "fs/promises";
+import {
+	access as fsAccess,
+	readFile as fsReadFile,
+	rename as fsRename,
+	unlink as fsUnlink,
+	writeFile as fsWriteFile,
+} from "fs/promises";
 import { dedupeEdits } from "./edit-deduplication.js";
 import { detectLineEnding, generateDiffString, normalizeToLF, restoreLineEndings, stripBom } from "./edit-diff.js";
 import { applyHashlineEdits } from "./hashline.js";
@@ -9,24 +15,23 @@ import { normalizeHashlineEdits, type RawHashlineEdit } from "./normalize-edits.
 import { resolveToCwd } from "./path-utils.js";
 
 const EditOperationSchema = Type.Object({
-	type: Type.String({
-		description:
-			"Edit type: set_line, replace_lines, insert_after, insert_before, insert_between, replace, append, prepend",
+	op: Type.Union([Type.Literal("replace"), Type.Literal("append"), Type.Literal("prepend")], {
+		description: 'Operation type: "replace", "append", or "prepend"',
 	}),
-	line: Type.Optional(Type.String({ description: 'Line reference in LINE#ID format (e.g., "5#ZP")' })),
-	start_line: Type.Optional(Type.String({ description: "Start line in LINE#ID format" })),
-	end_line: Type.Optional(Type.String({ description: "End line in LINE#ID format" })),
-	after_line: Type.Optional(Type.String({ description: "After line in LINE#ID format (for insert_between)" })),
-	before_line: Type.Optional(Type.String({ description: "Before line in LINE#ID format (for insert_between)" })),
-	text: Type.Optional(Type.String({ description: "New content (use \\n for newlines)" })),
-	content: Type.Optional(Type.String({ description: "Alias for text" })),
+	pos: Type.Optional(Type.String({ description: 'Line reference in LINE#ID format (e.g., "5#ZP")' })),
+	end: Type.Optional(Type.String({ description: "End line reference in LINE#ID format (for range replace)" })),
+	lines: Type.Union([Type.String(), Type.Array(Type.String()), Type.Null()], {
+		description: "New content: string, string[], or null (for deletion)",
+	}),
 });
 
 const editSchema = Type.Object({
-	path: Type.String({ description: "Path to the file to edit (relative or absolute)" }),
+	filePath: Type.String({ description: "Path to the file to edit (relative or absolute)" }),
 	edits: Type.Array(EditOperationSchema, {
 		description: "Array of edit operations to apply",
 	}),
+	delete: Type.Optional(Type.Boolean({ description: "If true, delete the file instead of editing it" })),
+	rename: Type.Optional(Type.String({ description: "New path to rename the file to" })),
 });
 
 export type EditToolInput = Static<typeof editSchema>;
@@ -49,12 +54,18 @@ export interface EditOperations {
 	writeFile: (absolutePath: string, content: string) => Promise<void>;
 	/** Check if file is readable and writable (throw if not) */
 	access: (absolutePath: string) => Promise<void>;
+	/** Delete a file */
+	unlink?: (absolutePath: string) => Promise<void>;
+	/** Rename a file */
+	rename?: (oldPath: string, newPath: string) => Promise<void>;
 }
 
 const defaultEditOperations: EditOperations = {
 	readFile: (path) => fsReadFile(path),
 	writeFile: (path, content) => fsWriteFile(path, content, "utf-8"),
 	access: (path) => fsAccess(path, constants.R_OK | constants.W_OK),
+	unlink: (path) => fsUnlink(path),
+	rename: (oldPath, newPath) => fsRename(oldPath, newPath),
 };
 
 export interface EditToolOptions {
@@ -77,34 +88,26 @@ Each line reference must be in "LINE#ID" format where:
 - Example: "5#ZP" means line 5 with ID "ZP"
 
 GETTING IDs:
-Use the read tool first - it returns lines in "LINE#ID:content" format.
+Use the read tool first - it returns lines in "LINE#ID|content" format.
 
-EIGHT OPERATION TYPES:
+THREE OPERATION TYPES:
 
-1. set_line: Replace a single line
-   { "type": "set_line", "line": "5#ZP", "text": "const y = 2" }
+1. replace: Replace line(s)
+   Single line: { "op": "replace", "pos": "5#ZP", "lines": "const y = 2" }
+   Range: { "op": "replace", "pos": "5#ZP", "end": "7#VR", "lines": "new\\ncontent" }
+   Delete range: { "op": "replace", "pos": "5#ZP", "end": "7#VR", "lines": null }
 
-2. replace_lines: Replace a range of lines (inclusive)
-   { "type": "replace_lines", "start_line": "5#ZP", "end_line": "7#VR", "text": "new\\ncontent" }
-   { "type": "replace_lines", "start_line": "5#ZP", "end_line": "7#VR", "text": "" } // deletes lines 5-7
+2. append: Insert after a line, or at end of file
+   After line: { "op": "append", "pos": "5#ZP", "lines": "console.log('hi')" }
+   End of file: { "op": "append", "lines": "// end of file" }
 
-3. insert_after: Insert new lines after a specific line
-   { "type": "insert_after", "line": "5#ZP", "text": "console.log('hi')" }
+3. prepend: Insert before a line, or at start of file
+   Before line: { "op": "prepend", "pos": "5#ZP", "lines": "// comment" }
+   Start of file: { "op": "prepend", "lines": "// header" }
 
-4. insert_before: Insert new lines before a specific line
-   { "type": "insert_before", "line": "5#ZP", "text": "// comment" }
-
-5. insert_between: Insert between two adjacent lines
-   { "type": "insert_between", "after_line": "5#ZP", "before_line": "6#VR", "text": "middle" }
-
-6. replace: Same as replace_lines (alias)
-   { "type": "replace", "start_line": "5#ZP", "end_line": "7#VR", "text": "new content" }
-
-7. append: Add lines at end of file
-   { "type": "append", "text": "// end of file" }
-
-8. prepend: Add lines at start of file
-   { "type": "prepend", "text": "// header" }
+FILE OPERATIONS:
+Delete file: { "filePath": "path/to/file", "edits": [], "delete": true }
+Rename file: { "filePath": "path/to/file", "edits": [], "rename": "new/path" }
 
 HASH MISMATCH HANDLING:
 If the ID doesn't match the current content, the edit fails with a clear error showing the corrected ref.
@@ -114,13 +117,16 @@ BOTTOM-UP APPLICATION:
 Edits are automatically sorted and applied from bottom to top (highest line numbers first) to preserve line number references.
 
 ESCAPING:
-Use \\n in text fields to represent literal newlines (for multi-line replacements/insertions).`,
+Use \\n in string lines fields to represent literal newlines (for multi-line replacements/insertions).
+Or pass lines as an array of strings for multi-line content.`,
 		parameters: editSchema,
 		execute: async (
 			_toolCallId: string,
-			{ path, edits }: { path: string; edits: RawHashlineEdit[] },
+			input: { filePath: string; edits: RawHashlineEdit[]; delete?: boolean; rename?: string },
 			signal?: AbortSignal,
 		) => {
+			// Support both filePath and legacy path field
+			const path = input.filePath ?? (input as any).path;
 			const absolutePath = resolveToCwd(path, cwd);
 
 			return new Promise<{
@@ -148,8 +154,39 @@ Use \\n in text fields to represent literal newlines (for multi-line replacement
 				// Perform the edit operation
 				(async () => {
 					try {
+						// Handle delete
+						if (input.delete) {
+							if (ops.unlink) {
+								await ops.unlink(absolutePath);
+							} else {
+								throw new Error("Delete operation not supported");
+							}
+							if (signal) signal.removeEventListener("abort", onAbort);
+							resolve({
+								content: [{ type: "text", text: `Deleted ${path}` }],
+								details: undefined,
+							});
+							return;
+						}
+
+						// Handle rename
+						if (input.rename) {
+							const newAbsolutePath = resolveToCwd(input.rename, cwd);
+							if (ops.rename) {
+								await ops.rename(absolutePath, newAbsolutePath);
+							} else {
+								throw new Error("Rename operation not supported");
+							}
+							if (signal) signal.removeEventListener("abort", onAbort);
+							resolve({
+								content: [{ type: "text", text: `Renamed ${path} to ${input.rename}` }],
+								details: undefined,
+							});
+							return;
+						}
+
 						// Normalize flexible edit input to typed edits
-						const normalizedEdits = normalizeHashlineEdits(edits);
+						const normalizedEdits = normalizeHashlineEdits(input.edits);
 
 						// Deduplicate
 						const { edits: uniqueEdits, duplicatesRemoved } = dedupeEdits(normalizedEdits);
@@ -167,7 +204,7 @@ Use \\n in text fields to represent literal newlines (for multi-line replacement
 
 						const canCreateFromMissingFile =
 							uniqueEdits.length > 0 &&
-							uniqueEdits.every((edit) => edit.type === "append" || edit.type === "prepend");
+							uniqueEdits.every((edit) => edit.op === "append" || edit.op === "prepend");
 
 						// Check if file exists or if we can create it from append/prepend edits
 						let fileExists = true;

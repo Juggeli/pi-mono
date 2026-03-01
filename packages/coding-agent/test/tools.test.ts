@@ -43,7 +43,7 @@ describe("Coding Agent Tools", () => {
 	});
 
 	describe("read tool", () => {
-		it("should read file contents in LINE#ID:content format", async () => {
+		it("should read file contents in LINE#ID|content format", async () => {
 			const testFile = join(testDir, "test.txt");
 			const content = "Hello, world!\nLine 2\nLine 3";
 			writeFileSync(testFile, content);
@@ -51,11 +51,11 @@ describe("Coding Agent Tools", () => {
 			const result = await readTool.execute("test-call-1", { path: testFile });
 			const output = getTextOutput(result);
 
-			// Verify hashline format: each line starts with LINE#ID:
+			// Verify hashline format: each line starts with LINE#ID|
 			const lines = output.split("\n");
-			expect(lines[0]).toMatch(/^1#[ZPMQVRWSNKTXJBYH]{2}:Hello, world!$/);
-			expect(lines[1]).toMatch(/^2#[ZPMQVRWSNKTXJBYH]{2}:Line 2$/);
-			expect(lines[2]).toMatch(/^3#[ZPMQVRWSNKTXJBYH]{2}:Line 3$/);
+			expect(lines[0]).toMatch(/^1#[ZPMQVRWSNKTXJBYH]{2}\|Hello, world!$/);
+			expect(lines[1]).toMatch(/^2#[ZPMQVRWSNKTXJBYH]{2}\|Line 2$/);
+			expect(lines[2]).toMatch(/^3#[ZPMQVRWSNKTXJBYH]{2}\|Line 3$/);
 			// No truncation message since file fits within limits
 			expect(output).not.toContain("Use offset=");
 			expect(result.details).toBeUndefined();
@@ -76,7 +76,7 @@ describe("Coding Agent Tools", () => {
 			const output = getTextOutput(result);
 
 			// Should have hashline-prefixed lines
-			expect(output).toMatch(/^1#[ZPMQVRWSNKTXJBYH]{2}:Line 1$/m);
+			expect(output).toMatch(/^1#[ZPMQVRWSNKTXJBYH]{2}\|Line 1$/m);
 			expect(output).not.toContain("Line 2001");
 			expect(output).toContain("[Showing lines 1-2000 of 2500. Use offset=2001 to continue.]");
 		});
@@ -90,7 +90,7 @@ describe("Coding Agent Tools", () => {
 			const result = await readTool.execute("test-call-4", { path: testFile });
 			const output = getTextOutput(result);
 
-			expect(output).toMatch(/^1#[ZPMQVRWSNKTXJBYH]{2}:Line 1:/m);
+			expect(output).toMatch(/^1#[ZPMQVRWSNKTXJBYH]{2}\|Line 1:/m);
 			// Should show byte limit message
 			expect(output).toMatch(/\[Showing lines 1-\d+ of 500 \(.* limit\)\. Use offset=\d+ to continue\.\]/);
 		});
@@ -105,8 +105,8 @@ describe("Coding Agent Tools", () => {
 
 			expect(output).not.toContain("Line 50");
 			// Lines should be numbered starting at 51
-			expect(output).toMatch(/^51#[ZPMQVRWSNKTXJBYH]{2}:Line 51$/m);
-			expect(output).toMatch(/^100#[ZPMQVRWSNKTXJBYH]{2}:Line 100$/m);
+			expect(output).toMatch(/^51#[ZPMQVRWSNKTXJBYH]{2}\|Line 51$/m);
+			expect(output).toMatch(/^100#[ZPMQVRWSNKTXJBYH]{2}\|Line 100$/m);
 			expect(output).not.toContain("Use offset=");
 		});
 
@@ -118,8 +118,8 @@ describe("Coding Agent Tools", () => {
 			const result = await readTool.execute("test-call-6", { path: testFile, limit: 10 });
 			const output = getTextOutput(result);
 
-			expect(output).toMatch(/^1#[ZPMQVRWSNKTXJBYH]{2}:Line 1$/m);
-			expect(output).toMatch(/^10#[ZPMQVRWSNKTXJBYH]{2}:Line 10$/m);
+			expect(output).toMatch(/^1#[ZPMQVRWSNKTXJBYH]{2}\|Line 1$/m);
+			expect(output).toMatch(/^10#[ZPMQVRWSNKTXJBYH]{2}\|Line 10$/m);
 			expect(output).not.toContain("Line 11");
 			expect(output).toContain("[90 more lines in file. Use offset=11 to continue.]");
 		});
@@ -137,8 +137,8 @@ describe("Coding Agent Tools", () => {
 			const output = getTextOutput(result);
 
 			expect(output).not.toContain("Line 40");
-			expect(output).toMatch(/^41#[ZPMQVRWSNKTXJBYH]{2}:Line 41$/m);
-			expect(output).toMatch(/^60#[ZPMQVRWSNKTXJBYH]{2}:Line 60$/m);
+			expect(output).toMatch(/^41#[ZPMQVRWSNKTXJBYH]{2}\|Line 41$/m);
+			expect(output).toMatch(/^60#[ZPMQVRWSNKTXJBYH]{2}\|Line 60$/m);
 			expect(output).not.toContain("Line 61");
 			expect(output).toContain("[40 more lines in file. Use offset=61 to continue.]");
 		});
@@ -195,7 +195,7 @@ describe("Coding Agent Tools", () => {
 			const output = getTextOutput(result);
 
 			// Content should be in hashline format
-			expect(output).toMatch(/^1#[ZPMQVRWSNKTXJBYH]{2}:definitely not a png$/);
+			expect(output).toMatch(/^1#[ZPMQVRWSNKTXJBYH]{2}\|definitely not a png$/);
 			expect(result.content.some((c: any) => c.type === "image")).toBe(false);
 		});
 	});
@@ -223,14 +223,14 @@ describe("Coding Agent Tools", () => {
 	});
 
 	describe("edit tool", () => {
-		it("should replace a line using set_line", async () => {
+		it("should replace a line using replace", async () => {
 			const testFile = join(testDir, "edit-test.txt");
 			writeFileSync(testFile, "Hello, world!\nLine 2\nLine 3\n");
 
 			const ref = lineRef(1, "Hello, world!");
 			const result = await editTool.execute("test-call-5", {
-				path: testFile,
-				edits: [{ type: "set_line", line: ref, text: "Hello, testing!" }],
+				filePath: testFile,
+				edits: [{ op: "replace", pos: ref, lines: "Hello, testing!" }],
 			});
 
 			expect(getTextOutput(result)).toContain("Updated");
@@ -241,15 +241,15 @@ describe("Coding Agent Tools", () => {
 			expect(content).toBe("Hello, testing!\nLine 2\nLine 3\n");
 		});
 
-		it("should replace a range using replace_lines", async () => {
+		it("should replace a range using replace with end", async () => {
 			const testFile = join(testDir, "edit-range.txt");
 			writeFileSync(testFile, "line 1\nline 2\nline 3\nline 4\nline 5\n");
 
 			const startRef = lineRef(2, "line 2");
 			const endRef = lineRef(4, "line 4");
 			const result = await editTool.execute("test-call-range", {
-				path: testFile,
-				edits: [{ type: "replace_lines", start_line: startRef, end_line: endRef, text: "replaced" }],
+				filePath: testFile,
+				edits: [{ op: "replace", pos: startRef, end: endRef, lines: "replaced" }],
 			});
 
 			expect(getTextOutput(result)).toContain("Updated");
@@ -257,14 +257,14 @@ describe("Coding Agent Tools", () => {
 			expect(content).toBe("line 1\nreplaced\nline 5\n");
 		});
 
-		it("should insert lines using insert_after", async () => {
+		it("should insert lines using append with pos (insert after)", async () => {
 			const testFile = join(testDir, "edit-insert.txt");
 			writeFileSync(testFile, "line 1\nline 2\nline 3\n");
 
 			const ref = lineRef(2, "line 2");
 			const result = await editTool.execute("test-call-insert", {
-				path: testFile,
-				edits: [{ type: "insert_after", line: ref, text: "inserted line" }],
+				filePath: testFile,
+				edits: [{ op: "append", pos: ref, lines: "inserted line" }],
 			});
 
 			expect(getTextOutput(result)).toContain("Updated");
@@ -272,14 +272,14 @@ describe("Coding Agent Tools", () => {
 			expect(content).toBe("line 1\nline 2\ninserted line\nline 3\n");
 		});
 
-		it("should insert lines using insert_before", async () => {
+		it("should insert lines using prepend with pos (insert before)", async () => {
 			const testFile = join(testDir, "edit-insert-before.txt");
 			writeFileSync(testFile, "line 1\nline 2\nline 3\n");
 
 			const ref = lineRef(2, "line 2");
 			const result = await editTool.execute("test-call-insert-before", {
-				path: testFile,
-				edits: [{ type: "insert_before", line: ref, text: "inserted line" }],
+				filePath: testFile,
+				edits: [{ op: "prepend", pos: ref, lines: "inserted line" }],
 			});
 
 			expect(getTextOutput(result)).toContain("Updated");
@@ -292,8 +292,8 @@ describe("Coding Agent Tools", () => {
 			writeFileSync(testFile, "line 1\nline 2\n");
 
 			const result = await editTool.execute("test-call-append", {
-				path: testFile,
-				edits: [{ type: "append", text: "line 3" }],
+				filePath: testFile,
+				edits: [{ op: "append", lines: "line 3" }],
 			});
 
 			expect(getTextOutput(result)).toContain("Updated");
@@ -306,8 +306,8 @@ describe("Coding Agent Tools", () => {
 			writeFileSync(testFile, "line 1\nline 2\n");
 
 			const result = await editTool.execute("test-call-prepend", {
-				path: testFile,
-				edits: [{ type: "prepend", text: "line 0" }],
+				filePath: testFile,
+				edits: [{ op: "prepend", lines: "line 0" }],
 			});
 
 			expect(getTextOutput(result)).toContain("Updated");
@@ -322,8 +322,8 @@ describe("Coding Agent Tools", () => {
 			// Use a wrong hash format (old format should fail)
 			await expect(
 				editTool.execute("test-call-mismatch", {
-					path: testFile,
-					edits: [{ type: "set_line", line: "1#AB", text: "new" }],
+					filePath: testFile,
+					edits: [{ op: "replace", pos: "1#AB", lines: "new" }],
 				}),
 			).rejects.toThrow(/Invalid line reference format/);
 		});
@@ -338,8 +338,8 @@ describe("Coding Agent Tools", () => {
 
 			await expect(
 				editTool.execute("test-call-wrong-hash", {
-					path: testFile,
-					edits: [{ type: "set_line", line: `1#${wrongHash}`, text: "new" }],
+					filePath: testFile,
+					edits: [{ op: "replace", pos: `1#${wrongHash}`, lines: "new" }],
 				}),
 			).rejects.toThrow(/changed since last read/i);
 		});
@@ -347,8 +347,8 @@ describe("Coding Agent Tools", () => {
 		it("should fail if file not found", async () => {
 			await expect(
 				editTool.execute("test-call-nofile", {
-					path: join(testDir, "nonexistent.txt"),
-					edits: [{ type: "set_line", line: "1#ZP", text: "x" }],
+					filePath: join(testDir, "nonexistent.txt"),
+					edits: [{ op: "replace", pos: "1#ZP", lines: "x" }],
 				}),
 			).rejects.toThrow(/File not found/);
 		});
@@ -357,8 +357,8 @@ describe("Coding Agent Tools", () => {
 			const testFile = join(testDir, "created-append.txt");
 
 			const result = await editTool.execute("test-call-create-append", {
-				path: testFile,
-				edits: [{ type: "append", text: "created" }],
+				filePath: testFile,
+				edits: [{ op: "append", lines: "created" }],
 			});
 
 			expect(getTextOutput(result)).toContain("Updated");
@@ -369,8 +369,8 @@ describe("Coding Agent Tools", () => {
 			const testFile = join(testDir, "created-prepend.txt");
 
 			const result = await editTool.execute("test-call-create-prepend", {
-				path: testFile,
-				edits: [{ type: "prepend", text: "created" }],
+				filePath: testFile,
+				edits: [{ op: "prepend", lines: "created" }],
 			});
 
 			expect(getTextOutput(result)).toContain("Updated");
@@ -380,7 +380,7 @@ describe("Coding Agent Tools", () => {
 		it("computeEditDiff should preview missing-file creation for append/prepend", async () => {
 			const testFile = join(testDir, "preview-create.txt");
 
-			const result = await computeEditDiff(testFile, [{ type: "append", text: "created" }], testDir);
+			const result = await computeEditDiff(testFile, [{ op: "append", lines: "created" }], testDir);
 			expect("error" in result).toBe(false);
 			if ("error" in result) {
 				throw new Error(result.error);
@@ -389,22 +389,22 @@ describe("Coding Agent Tools", () => {
 		});
 
 		it("computeEditDiff should still fail on missing file for non-create edits", async () => {
-			const testFile = join(testDir, "preview-missing-set-line.txt");
-			const result = await computeEditDiff(testFile, [{ type: "set_line", line: "1#ZP", text: "x" }], testDir);
+			const testFile = join(testDir, "preview-missing-replace.txt");
+			const result = await computeEditDiff(testFile, [{ op: "replace", pos: "1#ZP", lines: "x" }], testDir);
 			expect("error" in result).toBe(true);
 			if ("error" in result) {
 				expect(result.error).toContain("File not found");
 			}
 		});
 
-		it("should handle \\n escaping in text", async () => {
+		it("should handle \\n escaping in lines", async () => {
 			const testFile = join(testDir, "escape-test.txt");
 			writeFileSync(testFile, "line 1\nline 2\nline 3\n");
 
 			const ref = lineRef(2, "line 2");
 			const result = await editTool.execute("test-call-escape", {
-				path: testFile,
-				edits: [{ type: "set_line", line: ref, text: "first\\nsecond" }],
+				filePath: testFile,
+				edits: [{ op: "replace", pos: ref, lines: "first\\nsecond" }],
 			});
 
 			expect(getTextOutput(result)).toContain("Updated");
@@ -419,10 +419,10 @@ describe("Coding Agent Tools", () => {
 			const ref1 = lineRef(1, "line 1");
 			const ref4 = lineRef(4, "line 4");
 			const result = await editTool.execute("test-call-multi", {
-				path: testFile,
+				filePath: testFile,
 				edits: [
-					{ type: "set_line", line: ref1, text: "FIRST" },
-					{ type: "set_line", line: ref4, text: "FOURTH" },
+					{ op: "replace", pos: ref1, lines: "FIRST" },
+					{ op: "replace", pos: ref4, lines: "FOURTH" },
 				],
 			});
 
@@ -437,10 +437,10 @@ describe("Coding Agent Tools", () => {
 
 			const ref = lineRef(1, "line 1");
 			const result = await editTool.execute("test-call-dedup", {
-				path: testFile,
+				filePath: testFile,
 				edits: [
-					{ type: "set_line", line: ref, text: "REPLACED" },
-					{ type: "set_line", line: ref, text: "REPLACED" },
+					{ op: "replace", pos: ref, lines: "REPLACED" },
+					{ op: "replace", pos: ref, lines: "REPLACED" },
 				],
 			});
 
@@ -458,35 +458,16 @@ describe("Coding Agent Tools", () => {
 			const spacedRef = ` 1 # ${hash} `;
 
 			const result = await editTool.execute("test-call-dedup-anchor", {
-				path: testFile,
+				filePath: testFile,
 				edits: [
-					{ type: "set_line", line: canonicalRef, text: "REPLACED" },
-					{ type: "set_line", line: spacedRef, text: "REPLACED" },
+					{ op: "replace", pos: canonicalRef, lines: "REPLACED" },
+					{ op: "replace", pos: spacedRef, lines: "REPLACED" },
 				],
 			});
 
 			expect(getTextOutput(result)).toContain("1 duplicate(s) removed");
 			const content = readFileSync(testFile, "utf-8");
 			expect(content).toBe(["REPLACED", "line 2", ""].join(String.fromCharCode(10)));
-		});
-
-		it("should deduplicate replace and replace_lines alias edits", async () => {
-			const testFile = join(testDir, "dedup-replace-alias.txt");
-			writeFileSync(testFile, ["line 1", "line 2", "line 3", ""].join(String.fromCharCode(10)));
-
-			const line2Ref = lineRef(2, "line 2");
-			const result = await editTool.execute("test-call-dedup-replace-alias", {
-				path: testFile,
-				edits: [
-					{ type: "replace_lines", start_line: line2Ref, end_line: line2Ref, text: "updated" },
-					{ type: "replace", start_line: line2Ref, end_line: line2Ref, text: "updated" },
-				],
-			});
-
-			expect(getTextOutput(result)).toContain("1 duplicate(s) removed");
-			expect(readFileSync(testFile, "utf-8")).toBe(
-				["line 1", "updated", "line 3", ""].join(String.fromCharCode(10)),
-			);
 		});
 
 		it("should deduplicate escaped and literal newline payload variants", async () => {
@@ -497,10 +478,10 @@ describe("Coding Agent Tools", () => {
 			const escapedNewline = `A${String.fromCharCode(92)}nB`;
 			const literalMultiline = ["A", "B"].join(String.fromCharCode(10));
 			const result = await editTool.execute("test-call-dedup-newline-payload", {
-				path: testFile,
+				filePath: testFile,
 				edits: [
-					{ type: "set_line", line: ref, text: escapedNewline },
-					{ type: "set_line", line: ref, text: literalMultiline },
+					{ op: "replace", pos: ref, lines: escapedNewline },
+					{ op: "replace", pos: ref, lines: literalMultiline },
 				],
 			});
 
@@ -508,19 +489,49 @@ describe("Coding Agent Tools", () => {
 			expect(readFileSync(testFile, "utf-8")).toBe(["A", "B", "line 2", ""].join(String.fromCharCode(10)));
 		});
 
-		it("should accept content as alias for text", async () => {
-			const testFile = join(testDir, "content-alias.txt");
+		it("should accept legacy type/text fields", async () => {
+			const testFile = join(testDir, "legacy-fields.txt");
 			writeFileSync(testFile, "line 1\nline 2\n");
 
 			const ref = lineRef(1, "line 1");
-			const result = await editTool.execute("test-call-content-alias", {
-				path: testFile,
-				edits: [{ type: "set_line", line: ref, content: "REPLACED" } as any],
+			const result = await editTool.execute("test-call-legacy", {
+				filePath: testFile,
+				edits: [{ type: "set_line", line: ref, text: "REPLACED" } as any],
 			});
 
 			expect(getTextOutput(result)).toContain("Updated");
 			const content = readFileSync(testFile, "utf-8");
 			expect(content).toBe("REPLACED\nline 2\n");
+		});
+
+		it("should support delete operation", async () => {
+			const testFile = join(testDir, "delete-test.txt");
+			writeFileSync(testFile, "content to delete");
+
+			const result = await editTool.execute("test-call-delete", {
+				filePath: testFile,
+				edits: [],
+				delete: true,
+			});
+
+			expect(getTextOutput(result)).toContain("Deleted");
+			expect(() => readFileSync(testFile)).toThrow();
+		});
+
+		it("should support rename operation", async () => {
+			const testFile = join(testDir, "rename-source.txt");
+			const newFile = join(testDir, "rename-dest.txt");
+			writeFileSync(testFile, "content to rename");
+
+			const result = await editTool.execute("test-call-rename", {
+				filePath: testFile,
+				edits: [],
+				rename: newFile,
+			});
+
+			expect(getTextOutput(result)).toContain("Renamed");
+			expect(readFileSync(newFile, "utf-8")).toBe("content to rename");
+			expect(() => readFileSync(testFile)).toThrow();
 		});
 	});
 
@@ -533,8 +544,8 @@ describe("Coding Agent Tools", () => {
 			const ref = lineRef(2, "second");
 
 			await editTool.execute("test-crlf-1", {
-				path: testFile,
-				edits: [{ type: "set_line", line: ref, text: "REPLACED" }],
+				filePath: testFile,
+				edits: [{ op: "replace", pos: ref, lines: "REPLACED" }],
 			});
 
 			const content = readFileSync(testFile, "utf-8");
@@ -548,8 +559,8 @@ describe("Coding Agent Tools", () => {
 			const ref = lineRef(2, "second");
 
 			await editTool.execute("test-lf-1", {
-				path: testFile,
-				edits: [{ type: "set_line", line: ref, text: "REPLACED" }],
+				filePath: testFile,
+				edits: [{ op: "replace", pos: ref, lines: "REPLACED" }],
 			});
 
 			const content = readFileSync(testFile, "utf-8");
@@ -563,8 +574,8 @@ describe("Coding Agent Tools", () => {
 			const ref = lineRef(2, "second");
 
 			await editTool.execute("test-bom", {
-				path: testFile,
-				edits: [{ type: "set_line", line: ref, text: "REPLACED" }],
+				filePath: testFile,
+				edits: [{ op: "replace", pos: ref, lines: "REPLACED" }],
 			});
 
 			const content = readFileSync(testFile, "utf-8");

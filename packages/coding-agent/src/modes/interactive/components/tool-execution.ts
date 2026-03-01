@@ -272,7 +272,7 @@ export class ToolExecutionComponent extends Container {
 	private maybeComputeEditDiff(): void {
 		if (this.toolName !== "edit") return;
 
-		const path = this.args?.path;
+		const path = this.args?.filePath ?? this.args?.path;
 		const edits = this.args?.edits;
 
 		// Need path and non-empty edits array to compute diff

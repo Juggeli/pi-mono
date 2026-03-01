@@ -8,7 +8,10 @@
 import { toNewLines } from "./edit-text-normalization.js";
 import { type HashlineEdit, normalizeLineRef } from "./hashline.js";
 
-function normalizeEditPayload(payload: string): string {
+function normalizeEditPayload(payload: string | string[]): string {
+	if (Array.isArray(payload)) {
+		return toNewLines(payload).join("\n");
+	}
 	const normalizedNewlines = payload.replace(/\\n/g, "\n");
 	return toNewLines(normalizedNewlines).join("\n");
 }
@@ -19,23 +22,13 @@ function canonicalAnchor(anchor: string | undefined): string {
 }
 
 function buildDedupeKey(edit: HashlineEdit): string {
-	switch (edit.type) {
-		case "set_line":
-			return `set_line|${canonicalAnchor(edit.line)}|${normalizeEditPayload(edit.text)}`;
-		case "replace_lines":
-			return `replace|${canonicalAnchor(edit.start_line)}|${canonicalAnchor(edit.end_line)}|${normalizeEditPayload(edit.text)}`;
+	switch (edit.op) {
 		case "replace":
-			return `replace|${canonicalAnchor(edit.start_line)}|${canonicalAnchor(edit.end_line)}|${normalizeEditPayload(edit.text)}`;
-		case "insert_after":
-			return `insert_after|${canonicalAnchor(edit.line)}|${normalizeEditPayload(edit.text)}`;
-		case "insert_before":
-			return `insert_before|${canonicalAnchor(edit.line)}|${normalizeEditPayload(edit.text)}`;
-		case "insert_between":
-			return `insert_between|${canonicalAnchor(edit.after_line)}|${canonicalAnchor(edit.before_line)}|${normalizeEditPayload(edit.text)}`;
+			return `replace|${canonicalAnchor(edit.pos)}|${canonicalAnchor(edit.end)}|${normalizeEditPayload(edit.lines)}`;
 		case "append":
-			return `append|${normalizeEditPayload(edit.text)}`;
+			return `append|${canonicalAnchor(edit.pos)}|${normalizeEditPayload(edit.lines)}`;
 		case "prepend":
-			return `prepend|${normalizeEditPayload(edit.text)}`;
+			return `prepend|${canonicalAnchor(edit.pos)}|${normalizeEditPayload(edit.lines)}`;
 	}
 }
 

@@ -162,7 +162,7 @@ export default function (pi: ExtensionAPI) {
 
 		renderCall(args, theme) {
 			let text = theme.fg("toolTitle", theme.bold("edit "));
-			text += theme.fg("accent", args.path);
+			text += theme.fg("accent", args.filePath ?? (args as any).path);
 			return new Text(text, 0, 0);
 		},
 
