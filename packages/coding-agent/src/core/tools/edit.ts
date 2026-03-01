@@ -10,7 +10,7 @@ import {
 } from "fs/promises";
 import { dedupeEdits } from "./edit-deduplication.js";
 import { detectLineEnding, generateDiffString, normalizeToLF, restoreLineEndings, stripBom } from "./edit-diff.js";
-import { applyHashlineEdits } from "./hashline.js";
+import { applyHashlineEdits, HashlineMismatchError } from "./hashline.js";
 import { normalizeHashlineEdits, type RawHashlineEdit } from "./normalize-edits.js";
 import { resolveToCwd } from "./path-utils.js";
 
@@ -154,6 +154,14 @@ Or pass lines as an array of strings for multi-line content.`,
 				// Perform the edit operation
 				(async () => {
 					try {
+						// Validate invalid combinations
+						if (input.delete && input.rename) {
+							throw new Error("delete and rename cannot be used together");
+						}
+						if (input.delete && input.edits && input.edits.length > 0) {
+							throw new Error("delete mode requires edits to be an empty array");
+						}
+
 						// Handle delete
 						if (input.delete) {
 							if (ops.unlink) {
@@ -169,22 +177,6 @@ Or pass lines as an array of strings for multi-line content.`,
 							return;
 						}
 
-						// Handle rename
-						if (input.rename) {
-							const newAbsolutePath = resolveToCwd(input.rename, cwd);
-							if (ops.rename) {
-								await ops.rename(absolutePath, newAbsolutePath);
-							} else {
-								throw new Error("Rename operation not supported");
-							}
-							if (signal) signal.removeEventListener("abort", onAbort);
-							resolve({
-								content: [{ type: "text", text: `Renamed ${path} to ${input.rename}` }],
-								details: undefined,
-							});
-							return;
-						}
-
 						// Normalize flexible edit input to typed edits
 						const normalizedEdits = normalizeHashlineEdits(input.edits);
 
@@ -192,6 +184,21 @@ Or pass lines as an array of strings for multi-line content.`,
 						const { edits: uniqueEdits, duplicatesRemoved } = dedupeEdits(normalizedEdits);
 
 						if (uniqueEdits.length === 0) {
+							// Rename-only (no edits)
+							if (input.rename) {
+								const newAbsolutePath = resolveToCwd(input.rename, cwd);
+								if (ops.rename) {
+									await ops.rename(absolutePath, newAbsolutePath);
+								} else {
+									throw new Error("Rename operation not supported");
+								}
+								if (signal) signal.removeEventListener("abort", onAbort);
+								resolve({
+									content: [{ type: "text", text: `Renamed ${path} to ${input.rename}` }],
+									details: undefined,
+								});
+								return;
+							}
 							if (signal) {
 								signal.removeEventListener("abort", onAbort);
 							}
@@ -204,7 +211,7 @@ Or pass lines as an array of strings for multi-line content.`,
 
 						const canCreateFromMissingFile =
 							uniqueEdits.length > 0 &&
-							uniqueEdits.every((edit) => edit.op === "append" || edit.op === "prepend");
+							uniqueEdits.every((edit) => (edit.op === "append" || edit.op === "prepend") && !edit.pos);
 
 						// Check if file exists or if we can create it from append/prepend edits
 						let fileExists = true;
@@ -246,16 +253,19 @@ Or pass lines as an array of strings for multi-line content.`,
 						const { content: newContent, noopEdits } = applyHashlineEdits(normalizedContent, uniqueEdits);
 
 						// Verify the replacement actually changed something
-						if (normalizedContent === newContent) {
+						if (normalizedContent === newContent && !input.rename) {
 							if (signal) {
 								signal.removeEventListener("abort", onAbort);
 							}
-							const noopNote = noopEdits > 0 ? ` (${noopEdits} no-op edit(s))` : "";
+							let diagnostic = `No changes made to ${path}. The edits produced identical content.`;
+							if (noopEdits > 0) {
+								diagnostic += ` No-op edits: ${noopEdits}. Re-read the file and provide content that differs from current lines.`;
+							}
 							resolve({
 								content: [
 									{
 										type: "text",
-										text: `No changes resulted from ${uniqueEdits.length} edit(s) to ${path}. The edits produced identical content.${noopNote}`,
+										text: diagnostic,
 									},
 								],
 								details: undefined,
@@ -271,6 +281,16 @@ Or pass lines as an array of strings for multi-line content.`,
 						const finalContent = bom + restoreLineEndings(newContent, originalEnding);
 						await ops.writeFile(absolutePath, finalContent);
 
+						// Handle rename after edits (write edited content, then move)
+						if (input.rename && input.rename !== path) {
+							const newAbsolutePath = resolveToCwd(input.rename, cwd);
+							if (ops.rename) {
+								await ops.rename(absolutePath, newAbsolutePath);
+							} else {
+								throw new Error("Rename operation not supported");
+							}
+						}
+
 						// Check if aborted after writing
 						if (aborted) {
 							return;
@@ -281,13 +301,14 @@ Or pass lines as an array of strings for multi-line content.`,
 							signal.removeEventListener("abort", onAbort);
 						}
 
+						const effectivePath = input.rename && input.rename !== path ? input.rename : path;
 						const diffResult = generateDiffString(normalizedContent, newContent);
 						const dupeNote = duplicatesRemoved > 0 ? ` (${duplicatesRemoved} duplicate(s) removed)` : "";
 						resolve({
 							content: [
 								{
 									type: "text",
-									text: `Updated ${path}${dupeNote}`,
+									text: `Updated ${effectivePath}${dupeNote}`,
 								},
 							],
 							details: { diff: diffResult.diff, firstChangedLine: diffResult.firstChangedLine },
@@ -299,7 +320,16 @@ Or pass lines as an array of strings for multi-line content.`,
 						}
 
 						if (!aborted) {
-							reject(error);
+							if (error instanceof HashlineMismatchError) {
+								const message = error instanceof Error ? error.message : String(error);
+								reject(
+									new Error(
+										`${message}\nTip: reuse LINE#ID entries from the latest read/edit output, or batch related edits in one call.`,
+									),
+								);
+							} else {
+								reject(error);
+							}
 						}
 					}
 				})();
