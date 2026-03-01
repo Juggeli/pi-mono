@@ -79,54 +79,82 @@ export function createEditTool(cwd: string, options?: EditToolOptions): AgentToo
 	return {
 		name: "edit",
 		label: "edit",
-		description: `Edit files using LINE#ID references for precise, safe modifications.
+		description: `Edit files using LINE#ID format for precise, safe modifications.
 
-LINE#ID FORMAT:
-Each line reference must be in "LINE#ID" format where:
-- LINE: 1-based line number
-- ID: 2-character identifier from the hashline alphabet
-- Example: "5#ZP" means line 5 with ID "ZP"
+WORKFLOW:
+1. Read target file/range and copy exact LINE#ID tags.
+2. Pick the smallest operation per logical mutation site.
+3. Submit one edit call per file with all related operations.
+4. If same file needs another call, re-read first.
+5. Use anchors as "LINE#ID" only (never include trailing "|content").
 
-GETTING IDs:
-Use the read tool first - it returns lines in "LINE#ID|content" format.
+VALIDATION:
+  Payload shape: { "filePath": string, "edits": [...], "delete"?: boolean, "rename"?: string }
+  Each edit must be one of: replace, append, prepend
+  Edit shape: { "op": "replace"|"append"|"prepend", "pos"?: "LINE#ID", "end"?: "LINE#ID", "lines": string|string[]|null }
+  lines must contain plain replacement text only (no LINE#ID prefixes, no diff + markers)
+  CRITICAL: all operations validate against the same pre-edit file snapshot and apply bottom-up. Refs/tags are interpreted against the last-read version of the file.
 
-THREE OPERATION TYPES:
+LINE#ID FORMAT (CRITICAL):
+ Each line reference must be in "{line_number}#{hash_id}" format where:
+ {line_number}: 1-based line number
+ {hash_id}: Two CID letters from the set ZPMQVRWSNKTXJBYH
 
-1. replace: Replace line(s)
-   Single line: { "op": "replace", "pos": "5#ZP", "lines": "const y = 2" }
-   Range: { "op": "replace", "pos": "5#ZP", "end": "7#VR", "lines": "new\\ncontent" }
-   Delete range: { "op": "replace", "pos": "5#ZP", "end": "7#VR", "lines": null }
+FILE MODES:
+ delete=true deletes file and requires edits=[] with no rename
+ rename moves final content to a new path and removes old path
 
-2. append: Insert after a line, or at end of file
-   After line: { "op": "append", "pos": "5#ZP", "lines": "console.log('hi')" }
-   End of file: { "op": "append", "lines": "// end of file" }
+CONTENT FORMAT:
+  lines can be a string (single line) or string[] (multi-line, preferred).
+  If you pass a multi-line string, it is split by real newline characters.
+  Literal "\\n" is preserved as text.
 
-3. prepend: Insert before a line, or at start of file
-   Before line: { "op": "prepend", "pos": "5#ZP", "lines": "// comment" }
-   Start of file: { "op": "prepend", "lines": "// header" }
+FILE CREATION:
+  append without anchors adds content at EOF. If file does not exist, creates it.
+  prepend without anchors adds content at BOF. If file does not exist, creates it.
+  CRITICAL: only unanchored append/prepend can create a missing file.
 
-FILE OPERATIONS:
-Delete file: { "filePath": "path/to/file", "edits": [], "delete": true }
-Rename file: { "filePath": "path/to/file", "edits": [], "rename": "new/path" }
+OPERATION CHOICE:
+  replace with pos only -> replace one line at pos (MOST COMMON for single-line edits)
+  replace with pos+end -> replace ENTIRE range pos..end as a block (ranges MUST NOT overlap across edits)
+  append with pos/end anchor -> insert after that anchor
+  prepend with pos/end anchor -> insert before that anchor
+  append/prepend without anchors -> EOF/BOF insertion
 
-HASH MISMATCH HANDLING:
-If the ID doesn't match the current content, the edit fails with a clear error showing the corrected ref.
-Re-read the file to get updated IDs.
+RULES (CRITICAL):
+ 1. Minimize scope: one logical mutation site per operation.
+ 2. Preserve formatting: keep indentation, punctuation, line breaks, trailing commas, brace style.
+ 3. Prefer insertion over neighbor rewrites: anchor to structural boundaries (}, ], },), not interior property lines.
+ 4. No no-ops: replacement content must differ from current content.
+ 5. Touch only requested code: avoid incidental edits.
+ 6. Use exact current tokens: NEVER rewrite approximately.
+ 7. For swaps/moves: prefer one range operation over multiple single-line operations.
+ 8. Output tool calls only; no prose or commentary between them.
 
-BOTTOM-UP APPLICATION:
-Edits are automatically sorted and applied from bottom to top (highest line numbers first) to preserve line number references.
+TAG CHOICE (ALWAYS):
+ - Copy tags exactly from read output or >>> mismatch output.
+ - NEVER guess tags.
+  - Anchor to structural lines (function/class/brace), NEVER blank lines.
+  - Anti-pattern warning: blank/whitespace anchors are fragile.
+  - Re-read after each successful edit call before issuing another on the same file.
 
-ESCAPING:
-Use \\n in string lines fields to represent literal newlines (for multi-line replacements/insertions).
-Or pass lines as an array of strings for multi-line content.`,
+AUTOCORRECT (built-in - you do NOT need to handle these):
+ Merged lines are auto-expanded back to original line count.
+ Indentation is auto-restored from original lines.
+ BOM and CRLF line endings are preserved automatically.
+ Hashline prefixes and diff markers in text are auto-stripped.
+
+RECOVERY (when >>> mismatch error appears):
+ Copy the updated LINE#ID tags shown in the error output directly.
+ Re-read only if the needed tags are missing from the error snippet.
+ ALWAYS batch all edits for one file in a single call.`,
 		parameters: editSchema,
 		execute: async (
 			_toolCallId: string,
 			input: { filePath: string; edits: RawHashlineEdit[]; delete?: boolean; rename?: string },
 			signal?: AbortSignal,
 		) => {
-			// Support both filePath and legacy path field
-			const path = input.filePath ?? (input as any).path;
+			const path = input.filePath;
 			const absolutePath = resolveToCwd(path, cwd);
 
 			return new Promise<{

@@ -397,19 +397,19 @@ describe("Coding Agent Tools", () => {
 			}
 		});
 
-		it("should handle \\n escaping in lines", async () => {
+		it("should preserve literal backslash-n in string lines", async () => {
 			const testFile = join(testDir, "escape-test.txt");
 			writeFileSync(testFile, "line 1\nline 2\nline 3\n");
 
 			const ref = lineRef(2, "line 2");
 			const result = await editTool.execute("test-call-escape", {
 				filePath: testFile,
-				edits: [{ op: "replace", pos: ref, lines: "first\\nsecond" }],
+				edits: [{ op: "replace", pos: ref, lines: "join(\\n)" }],
 			});
 
 			expect(getTextOutput(result)).toContain("Updated");
 			const content = readFileSync(testFile, "utf-8");
-			expect(content).toBe("line 1\nfirst\nsecond\nline 3\n");
+			expect(content).toBe("line 1\njoin(\\n)\nline 3\n");
 		});
 
 		it("should apply multiple edits bottom-up", async () => {
@@ -470,38 +470,22 @@ describe("Coding Agent Tools", () => {
 			expect(content).toBe(["REPLACED", "line 2", ""].join(String.fromCharCode(10)));
 		});
 
-		it("should deduplicate escaped and literal newline payload variants", async () => {
+		it("should deduplicate identical multi-line payload variants", async () => {
 			const testFile = join(testDir, "dedup-newline-payload.txt");
 			writeFileSync(testFile, ["line 1", "line 2", ""].join(String.fromCharCode(10)));
 
 			const ref = lineRef(1, "line 1");
-			const escapedNewline = `A${String.fromCharCode(92)}nB`;
 			const literalMultiline = ["A", "B"].join(String.fromCharCode(10));
 			const result = await editTool.execute("test-call-dedup-newline-payload", {
 				filePath: testFile,
 				edits: [
-					{ op: "replace", pos: ref, lines: escapedNewline },
+					{ op: "replace", pos: ref, lines: literalMultiline },
 					{ op: "replace", pos: ref, lines: literalMultiline },
 				],
 			});
 
 			expect(getTextOutput(result)).toContain("1 duplicate(s) removed");
 			expect(readFileSync(testFile, "utf-8")).toBe(["A", "B", "line 2", ""].join(String.fromCharCode(10)));
-		});
-
-		it("should accept legacy type/text fields", async () => {
-			const testFile = join(testDir, "legacy-fields.txt");
-			writeFileSync(testFile, "line 1\nline 2\n");
-
-			const ref = lineRef(1, "line 1");
-			const result = await editTool.execute("test-call-legacy", {
-				filePath: testFile,
-				edits: [{ type: "set_line", line: ref, text: "REPLACED" } as any],
-			});
-
-			expect(getTextOutput(result)).toContain("Updated");
-			const content = readFileSync(testFile, "utf-8");
-			expect(content).toBe("REPLACED\nline 2\n");
 		});
 
 		it("should support delete operation", async () => {
