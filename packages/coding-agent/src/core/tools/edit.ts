@@ -148,22 +148,6 @@ Use \\n in text fields to represent literal newlines (for multi-line replacement
 				// Perform the edit operation
 				(async () => {
 					try {
-						// Check if file exists
-						try {
-							await ops.access(absolutePath);
-						} catch {
-							if (signal) {
-								signal.removeEventListener("abort", onAbort);
-							}
-							reject(new Error(`File not found: ${path}`));
-							return;
-						}
-
-						// Check if aborted before reading
-						if (aborted) {
-							return;
-						}
-
 						// Normalize flexible edit input to typed edits
 						const normalizedEdits = normalizeHashlineEdits(edits);
 
@@ -181,8 +165,33 @@ Use \\n in text fields to represent literal newlines (for multi-line replacement
 							return;
 						}
 
-						// Read the file
-						const buffer = await ops.readFile(absolutePath);
+						const canCreateFromMissingFile =
+							uniqueEdits.length > 0 &&
+							uniqueEdits.every((edit) => edit.type === "append" || edit.type === "prepend");
+
+						// Check if file exists or if we can create it from append/prepend edits
+						let fileExists = true;
+						try {
+							await ops.access(absolutePath);
+						} catch {
+							fileExists = false;
+						}
+
+						if (!fileExists && !canCreateFromMissingFile) {
+							if (signal) {
+								signal.removeEventListener("abort", onAbort);
+							}
+							reject(new Error(`File not found: ${path}`));
+							return;
+						}
+
+						// Check if aborted before reading
+						if (aborted) {
+							return;
+						}
+
+						// Read file if it exists, otherwise start from empty content
+						const buffer = fileExists ? await ops.readFile(absolutePath) : Buffer.from("");
 						const rawContent = buffer.toString("utf-8");
 
 						// Check if aborted after reading

@@ -35,6 +35,9 @@ export const HASHLINE_PATTERN = /^(\d+)#([ZPMQVRWSNKTXJBYH]{2}):(.*)$/;
 /** Regex to parse a line reference: "LINE#ID" */
 export const HASHLINE_REF_PATTERN = /^([0-9]+)#([ZPMQVRWSNKTXJBYH]{2})$/;
 
+const MISMATCH_CONTEXT = 2;
+const LINE_REF_EXTRACT_PATTERN = /([0-9]+#[ZPMQVRWSNKTXJBYH]{2})(?=[:|\s]|$)/;
+
 // ============================================================================
 // Types
 // ============================================================================
@@ -142,36 +145,58 @@ export function formatHashLines(content: string, startLine = 1): string {
 // Validation
 // ============================================================================
 
-/** Parse a "LINE#ID" reference string into { line, hash } */
-export function parseLineRef(ref: string): LineRef {
-	const match = ref.match(HASHLINE_REF_PATTERN);
-	if (!match) {
-		throw new Error(`Invalid line reference format: "${ref}". Expected format: "LINE#ID" (e.g., "42#ZP")`);
+/**
+ * Normalize flexible line ref input to canonical "LINE#ID".
+ * Accepts common copied variants like:
+ * - ">>> 42#VK"
+ * - "42 # VK"
+ * - "42#VK:content"
+ * - "42#VK|content"
+ */
+export function normalizeLineRef(ref: string): string {
+	const originalTrimmed = ref.trim();
+	let trimmed = originalTrimmed;
+	trimmed = trimmed.replace(/^(?:>>>|>>|[+-])\s*/, "");
+	trimmed = trimmed.replace(/\s*#\s*/, "#");
+	trimmed = trimmed.replace(/[:|].*$/, "");
+	trimmed = trimmed.trim();
+
+	if (HASHLINE_REF_PATTERN.test(trimmed)) {
+		return trimmed;
 	}
-	return {
-		line: Number.parseInt(match[1], 10),
-		hash: match[2],
-	};
+
+	const extracted = trimmed.match(LINE_REF_EXTRACT_PATTERN);
+	if (extracted) {
+		return extracted[1];
+	}
+
+	return originalTrimmed;
 }
 
-/** Validate that a line reference points to a valid line with matching hash */
-export function validateLineRef(lines: string[], ref: string): void {
-	const { line, hash } = parseLineRef(ref);
-
-	if (line < 1 || line > lines.length) {
-		throw new Error(`Line number ${line} out of bounds. File has ${lines.length} lines.`);
+/** Parse a "LINE#ID" reference string into { line, hash } */
+export function parseLineRef(ref: string): LineRef {
+	const normalized = normalizeLineRef(ref);
+	const match = normalized.match(HASHLINE_REF_PATTERN);
+	if (match) {
+		return {
+			line: Number.parseInt(match[1], 10),
+			hash: match[2],
+		};
 	}
 
-	const content = lines[line - 1];
-	const currentHash = computeLineHash(line, content);
-
-	if (currentHash !== hash) {
-		throw new Error(
-			`Hash mismatch at line ${line}. Expected hash: ${hash}, current hash: ${currentHash}. ` +
-				`Line content may have changed. Current content: "${content}". ` +
-				`Corrected ref: ${line}#${currentHash}`,
-		);
+	const hashIdx = normalized.indexOf("#");
+	if (hashIdx > 0) {
+		const prefix = normalized.slice(0, hashIdx);
+		const suffix = normalized.slice(hashIdx + 1);
+		if (!/^\d+$/.test(prefix) && /^[ZPMQVRWSNKTXJBYH]{2}$/.test(suffix)) {
+			throw new Error(
+				`Invalid line reference: "${ref}". "${prefix}" is not a line number. ` +
+					"Use the actual line number from the read output.",
+			);
+		}
 	}
+
+	throw new Error(`Invalid line reference format: "${ref}". Expected format: "{line_number}#{hash_id}"`);
 }
 
 export interface HashlineMismatch {
@@ -182,6 +207,123 @@ export interface HashlineMismatch {
 	content: string;
 }
 
+export class HashlineMismatchError extends Error {
+	readonly remaps: ReadonlyMap<string, string>;
+
+	constructor(
+		private readonly mismatches: HashlineMismatch[],
+		private readonly fileLines: string[],
+	) {
+		super(HashlineMismatchError.formatMessage(mismatches, fileLines));
+		this.name = "HashlineMismatchError";
+
+		const remaps = new Map<string, string>();
+		for (const mismatch of mismatches) {
+			const actual = computeLineHash(mismatch.line, fileLines[mismatch.line - 1] ?? "");
+			const sourceRef = mismatch.ref || `${mismatch.line}#${mismatch.expectedHash}`;
+			remaps.set(sourceRef, `${mismatch.line}#${actual}`);
+		}
+		this.remaps = remaps;
+	}
+
+	static formatMessage(mismatches: HashlineMismatch[], fileLines: string[]): string {
+		const mismatchByLine = new Map<number, HashlineMismatch>();
+		for (const mismatch of mismatches) mismatchByLine.set(mismatch.line, mismatch);
+
+		const displayLines = new Set<number>();
+		for (const mismatch of mismatches) {
+			const low = Math.max(1, mismatch.line - MISMATCH_CONTEXT);
+			const high = Math.min(fileLines.length, mismatch.line + MISMATCH_CONTEXT);
+			for (let line = low; line <= high; line++) displayLines.add(line);
+		}
+
+		const mismatchCount = mismatchByLine.size;
+		const sortedLines = [...displayLines].sort((a, b) => a - b);
+		const output: string[] = [];
+		output.push(
+			`${mismatchCount} line${mismatchCount > 1 ? "s have" : " has"} changed since last read. ` +
+				"Use updated {line_number}#{hash_id} references below (>>> marks changed lines).",
+		);
+		output.push("");
+
+		let previousLine = -1;
+		for (const line of sortedLines) {
+			if (previousLine !== -1 && line > previousLine + 1) {
+				output.push("    ...");
+			}
+			previousLine = line;
+
+			const content = fileLines[line - 1] ?? "";
+			const hash = computeLineHash(line, content);
+			const prefixed = `${line}#${hash}:${content}`;
+			output.push(mismatchByLine.has(line) ? `>>> ${prefixed}` : `    ${prefixed}`);
+		}
+
+		return output.join("\n");
+	}
+
+	getMismatches(): HashlineMismatch[] {
+		return [...this.mismatches];
+	}
+
+	getFileLines(): string[] {
+		return [...this.fileLines];
+	}
+}
+
+function suggestLineForHash(ref: string, lines: string[]): string | null {
+	const normalized = normalizeLineRef(ref);
+	const hashMatch = normalized.match(/#([ZPMQVRWSNKTXJBYH]{2})$/);
+	if (!hashMatch) return null;
+
+	const hash = hashMatch[1];
+	for (let i = 0; i < lines.length; i++) {
+		if (computeLineHash(i + 1, lines[i]) === hash) {
+			return `Did you mean "${i + 1}#${hash}"?`;
+		}
+	}
+	return null;
+}
+
+function parseLineRefWithHint(ref: string, lines: string[]): LineRef {
+	try {
+		return parseLineRef(ref);
+	} catch (parseError) {
+		const hint = suggestLineForHash(ref, lines);
+		if (hint && parseError instanceof Error) {
+			throw new Error(`${parseError.message} ${hint}`);
+		}
+		throw parseError;
+	}
+}
+
+/** Validate that a line reference points to a valid line with matching hash */
+export function validateLineRef(lines: string[], ref: string): void {
+	const { line, hash } = parseLineRefWithHint(ref, lines);
+
+	if (line < 1 || line > lines.length) {
+		throw new Error(`Line number ${line} out of bounds. File has ${lines.length} lines.`);
+	}
+
+	const content = lines[line - 1];
+	const currentHash = computeLineHash(line, content);
+
+	if (currentHash !== hash) {
+		throw new HashlineMismatchError(
+			[
+				{
+					ref,
+					line,
+					expectedHash: hash,
+					currentHash,
+					content,
+				},
+			],
+			lines,
+		);
+	}
+}
+
 /**
  * Validate multiple line references in batch.
  * Returns all mismatches at once for better error reporting.
@@ -190,7 +332,7 @@ export function validateLineRefs(lines: string[], refs: string[]): void {
 	const mismatches: HashlineMismatch[] = [];
 
 	for (const ref of refs) {
-		const { line, hash } = parseLineRef(ref);
+		const { line, hash } = parseLineRefWithHint(ref, lines);
 
 		if (line < 1 || line > lines.length) {
 			throw new Error(`Line number ${line} out of bounds. File has ${lines.length} lines.`);
@@ -198,21 +340,13 @@ export function validateLineRefs(lines: string[], refs: string[]): void {
 
 		const content = lines[line - 1];
 		const currentHash = computeLineHash(line, content);
-
 		if (currentHash !== hash) {
 			mismatches.push({ ref, line, expectedHash: hash, currentHash, content });
 		}
 	}
 
 	if (mismatches.length > 0) {
-		const details = mismatches
-			.map(
-				(m) =>
-					`  Line ${m.line}: expected ${m.expectedHash}, got ${m.currentHash}. ` +
-					`Content: "${m.content}". Corrected: ${m.line}#${m.currentHash}`,
-			)
-			.join("\n");
-		throw new Error(`Hash mismatch for ${mismatches.length} line(s). Re-read the file for updated refs.\n${details}`);
+		throw new HashlineMismatchError(mismatches, lines);
 	}
 }
 
@@ -278,13 +412,69 @@ export function collectLineRefs(edits: HashlineEdit[]): string[] {
 	return refs;
 }
 
+/** Detect overlapping replace ranges that would produce ambiguous results. */
+export function detectOverlappingRanges(edits: HashlineEdit[]): string | null {
+	const ranges: { start: number; end: number; idx: number }[] = [];
+	const setLineEdits: { line: number; idx: number }[] = [];
+
+	for (let i = 0; i < edits.length; i++) {
+		const edit = edits[i];
+		switch (edit.type) {
+			case "replace_lines":
+			case "replace": {
+				const start = parseLineRef(edit.start_line).line;
+				const end = parseLineRef(edit.end_line).line;
+				if (start > end) continue;
+				ranges.push({ start, end, idx: i });
+				break;
+			}
+			case "set_line": {
+				setLineEdits.push({ line: parseLineRef(edit.line).line, idx: i });
+				break;
+			}
+			default:
+				break;
+		}
+	}
+
+	if (ranges.length > 1) {
+		ranges.sort((a, b) => a.start - b.start || a.end - b.end);
+		for (let i = 1; i < ranges.length; i++) {
+			const prev = ranges[i - 1];
+			const curr = ranges[i];
+			if (curr.start <= prev.end) {
+				return (
+					`Overlapping range edits detected: ` +
+					`edit ${prev.idx + 1} (lines ${prev.start}-${prev.end}) overlaps with ` +
+					`edit ${curr.idx + 1} (lines ${curr.start}-${curr.end}). ` +
+					"Use set_line for single-line replacements."
+				);
+			}
+		}
+	}
+
+	for (const single of setLineEdits) {
+		for (const range of ranges) {
+			if (single.line >= range.start && single.line <= range.end) {
+				return (
+					`Conflicting edits detected: edit ${single.idx + 1} targets line ${single.line}, ` +
+					`which is also modified by edit ${range.idx + 1} (lines ${range.start}-${range.end}). ` +
+					"Use either set_line or range replace for overlapping lines."
+				);
+			}
+		}
+	}
+
+	return null;
+}
+
 /** Apply hashline edits to content. Sorts edits bottom-up (highest line first) to preserve line references. */
 export function applyHashlineEdits(content: string, edits: HashlineEdit[]): string {
 	if (edits.length === 0) {
 		return content;
 	}
 
-	const lines = content.split("\n");
+	const lines = content.length === 0 ? [] : content.split("\n");
 
 	// Batch validate all line refs upfront
 	const refs = collectLineRefs(edits);
@@ -292,8 +482,29 @@ export function applyHashlineEdits(content: string, edits: HashlineEdit[]): stri
 		validateLineRefs(lines, refs);
 	}
 
-	// Sort bottom-up: highest line numbers first
-	const sortedEdits = [...edits].sort((a, b) => getEditLineNumber(b) - getEditLineNumber(a));
+	const overlapError = detectOverlappingRanges(edits);
+	if (overlapError) {
+		throw new Error(overlapError);
+	}
+
+	const EDIT_PRECEDENCE: Record<HashlineEdit["type"], number> = {
+		set_line: 0,
+		replace_lines: 0,
+		replace: 0,
+		insert_between: 1,
+		insert_after: 2,
+		insert_before: 3,
+		append: 4,
+		prepend: 5,
+	};
+
+	// Sort bottom-up: highest line numbers first.
+	// On same line, apply replacements before insertions.
+	const sortedEdits = [...edits].sort((a, b) => {
+		const lineDiff = getEditLineNumber(b) - getEditLineNumber(a);
+		if (lineDiff !== 0) return lineDiff;
+		return EDIT_PRECEDENCE[a.type] - EDIT_PRECEDENCE[b.type];
+	});
 
 	for (const edit of sortedEdits) {
 		switch (edit.type) {

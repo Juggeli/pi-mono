@@ -175,12 +175,36 @@ describe("hashline", () => {
 			expect(result).toEqual({ line: 99999, hash: "VR" });
 		});
 
+		it("accepts refs copied with marker only", () => {
+			const result = parseLineRef(">>> 42#VK");
+			expect(result).toEqual({ line: 42, hash: "VK" });
+		});
+
+		it("accepts refs copied with trailing content", () => {
+			const result = parseLineRef(">>> 42#VK:const value = 1");
+			expect(result).toEqual({ line: 42, hash: "VK" });
+		});
+
+		it("accepts refs with spaces around hash separator", () => {
+			const result = parseLineRef("42 # VK");
+			expect(result).toEqual({ line: 42, hash: "VK" });
+		});
+
+		it("extracts valid reference from mixed prefix like LINE42#VK", () => {
+			const result = parseLineRef("LINE42#VK");
+			expect(result).toEqual({ line: 42, hash: "VK" });
+		});
+
 		it("throws on invalid format - no hash separator", () => {
 			expect(() => parseLineRef("42a3")).toThrow(/Invalid line reference format/);
 		});
 
 		it("throws on invalid format - old colon format", () => {
 			expect(() => parseLineRef("42:a3f1c2d4")).toThrow(/Invalid line reference format/);
+		});
+
+		it("throws with a specific hint when literal prefix is used as line number", () => {
+			expect(() => parseLineRef("LINE#HK")).toThrow(/not a line number/i);
 		});
 
 		it("throws on invalid format - lowercase chars", () => {
@@ -221,21 +245,14 @@ describe("hashline", () => {
 			const lines = ["hello", "world"];
 			const actualHash = computeLineHash(1, "hello");
 			const wrongHash = actualHash === "ZP" ? "MQ" : "ZP";
-			expect(() => validateLineRef(lines, `1#${wrongHash}`)).toThrow(/Hash mismatch/);
+			expect(() => validateLineRef(lines, `1#${wrongHash}`)).toThrow(/changed since last read/i);
 		});
 
-		it("includes current content in mismatch error", () => {
+		it("includes >>> context line in mismatch error", () => {
 			const lines = ["hello", "world"];
 			const actualHash = computeLineHash(1, "hello");
 			const wrongHash = actualHash === "ZP" ? "MQ" : "ZP";
-			expect(() => validateLineRef(lines, `1#${wrongHash}`)).toThrow(/Current content: "hello"/);
-		});
-
-		it("includes corrected ref in mismatch error", () => {
-			const lines = ["hello", "world"];
-			const actualHash = computeLineHash(1, "hello");
-			const wrongHash = actualHash === "ZP" ? "MQ" : "ZP";
-			expect(() => validateLineRef(lines, `1#${wrongHash}`)).toThrow(/Corrected ref: 1#/);
+			expect(() => validateLineRef(lines, `1#${wrongHash}`)).toThrow(/>>>\s+1#[ZPMQVRWSNKTXJBYH]{2}:hello/);
 		});
 	});
 
@@ -246,13 +263,26 @@ describe("hashline", () => {
 			expect(() => validateLineRefs(lines, refs)).not.toThrow();
 		});
 
-		it("reports all mismatches at once", () => {
+		it("reports all mismatches with >>> context", () => {
 			const lines = ["hello", "world"];
 			const wrongHash1 = computeLineHash(1, "hello") === "ZP" ? "MQ" : "ZP";
 			const wrongHash2 = computeLineHash(2, "world") === "ZP" ? "MQ" : "ZP";
+			expect(() => validateLineRefs(lines, [`1#${wrongHash1}`, `2#${wrongHash2}`])).toThrow(/2 lines have changed/i);
 			expect(() => validateLineRefs(lines, [`1#${wrongHash1}`, `2#${wrongHash2}`])).toThrow(
-				/Hash mismatch for 2 line/,
+				/>>>\s+1#[ZPMQVRWSNKTXJBYH]{2}:hello/,
 			);
+		});
+
+		it("suggests line number when hash matches existing line", () => {
+			const lines = ["function hello() {", "  return 42", "}"];
+			const hash = computeLineHash(1, lines[0]);
+			expect(() => validateLineRefs(lines, [`LINE#${hash}`])).toThrow(new RegExp(`1#${hash}`));
+		});
+
+		it("reports unique changed-line count when duplicate refs point to same line", () => {
+			const lines = ["hello", "world"];
+			const wrongHash = computeLineHash(1, "hello") === "ZP" ? "MQ" : "ZP";
+			expect(() => validateLineRefs(lines, [`1#${wrongHash}`, `1#${wrongHash}`])).toThrow(/1 line has changed/i);
 		});
 	});
 
@@ -483,6 +513,35 @@ describe("hashline", () => {
 					{ type: "insert_after", line: ref(3, "line 3"), text: "after 3" },
 				]);
 				expect(result).toBe("line 1\nafter 1\nline 2\nline 3\nafter 3");
+			});
+
+			it("applies replacement before insertion when both target same line", () => {
+				const content = ["line 1", "line 2", "line 3"].join(String.fromCharCode(10));
+				const result = applyHashlineEdits(content, [
+					{ type: "insert_before", line: ref(2, "line 2"), text: "before line 2" },
+					{ type: "set_line", line: ref(2, "line 2"), text: "modified line 2" },
+				]);
+				expect(result).toBe(["line 1", "before line 2", "modified line 2", "line 3"].join(String.fromCharCode(10)));
+			});
+
+			it("throws on overlapping range edits", () => {
+				const content = ["line 1", "line 2", "line 3", "line 4", "line 5"].join(String.fromCharCode(10));
+				expect(() =>
+					applyHashlineEdits(content, [
+						{ type: "replace_lines", start_line: ref(1, "line 1"), end_line: ref(3, "line 3"), text: "A" },
+						{ type: "replace", start_line: ref(2, "line 2"), end_line: ref(4, "line 4"), text: "B" },
+					]),
+				).toThrow(/overlapping range edits/i);
+			});
+
+			it("throws when set_line overlaps with a replace range", () => {
+				const content = ["line 1", "line 2", "line 3", "line 4"].join(String.fromCharCode(10));
+				expect(() =>
+					applyHashlineEdits(content, [
+						{ type: "set_line", line: ref(2, "line 2"), text: "S" },
+						{ type: "replace_lines", start_line: ref(1, "line 1"), end_line: ref(3, "line 3"), text: "R" },
+					]),
+				).toThrow(/conflicting edits detected/i);
 			});
 		});
 

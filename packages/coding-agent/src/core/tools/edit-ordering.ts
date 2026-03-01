@@ -5,4 +5,4 @@
  * The actual implementations live in hashline.ts to avoid circular dependencies.
  */
 
-export { collectLineRefs, getEditLineNumber } from "./hashline.js";
+export { collectLineRefs, detectOverlappingRanges, getEditLineNumber } from "./hashline.js";
