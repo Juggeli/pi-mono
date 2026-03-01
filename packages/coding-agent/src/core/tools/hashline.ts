@@ -8,6 +8,15 @@
  */
 
 import { createHash } from "node:crypto";
+import { autocorrectReplacementLines } from "./autocorrect-replacement-lines.js";
+import {
+	restoreLeadingIndent,
+	stripInsertAnchorEcho,
+	stripInsertBeforeEcho,
+	stripInsertBoundaryEcho,
+	stripRangeBoundaryEcho,
+	toNewLines,
+} from "./edit-text-normalization.js";
 
 // ============================================================================
 // Constants
@@ -468,10 +477,15 @@ export function detectOverlappingRanges(edits: HashlineEdit[]): string | null {
 	return null;
 }
 
+export interface HashlineApplyReport {
+	content: string;
+	noopEdits: number;
+}
+
 /** Apply hashline edits to content. Sorts edits bottom-up (highest line first) to preserve line references. */
-export function applyHashlineEdits(content: string, edits: HashlineEdit[]): string {
+export function applyHashlineEdits(content: string, edits: HashlineEdit[]): HashlineApplyReport {
 	if (edits.length === 0) {
-		return content;
+		return { content, noopEdits: 0 };
 	}
 
 	const lines = content.length === 0 ? [] : content.split("\n");
@@ -506,24 +520,25 @@ export function applyHashlineEdits(content: string, edits: HashlineEdit[]): stri
 		return EDIT_PRECEDENCE[a.type] - EDIT_PRECEDENCE[b.type];
 	});
 
+	let noopEdits = 0;
+
 	for (const edit of sortedEdits) {
+		const snapshotBefore = lines.join("\n");
+
 		switch (edit.type) {
 			case "set_line": {
 				const { line } = parseLineRef(edit.line);
-				lines[line - 1] = unescapeNewlines(edit.text);
+				const originalLine = lines[line - 1] ?? "";
+				let newLines = toNewLines(unescapeNewlines(edit.text));
+				newLines = autocorrectReplacementLines([originalLine], newLines);
+				newLines = newLines.map((entry, idx) => {
+					if (idx !== 0) return entry;
+					return restoreLeadingIndent(originalLine, entry);
+				});
+				lines.splice(line - 1, 1, ...newLines);
 				break;
 			}
-			case "replace_lines": {
-				const { line: startLine } = parseLineRef(edit.start_line);
-				const { line: endLine } = parseLineRef(edit.end_line);
-				if (startLine > endLine) {
-					throw new Error(`Invalid range: start line ${startLine} cannot be greater than end line ${endLine}`);
-				}
-				const unescapedText = unescapeNewlines(edit.text);
-				const newLines = unescapedText === "" ? [] : unescapedText.split("\n");
-				lines.splice(startLine - 1, endLine - startLine + 1, ...newLines);
-				break;
-			}
+			case "replace_lines":
 			case "replace": {
 				const { line: startLine } = parseLineRef(edit.start_line);
 				const { line: endLine } = parseLineRef(edit.end_line);
@@ -531,19 +546,30 @@ export function applyHashlineEdits(content: string, edits: HashlineEdit[]): stri
 					throw new Error(`Invalid range: start line ${startLine} cannot be greater than end line ${endLine}`);
 				}
 				const unescapedText = unescapeNewlines(edit.text);
-				const newLines = unescapedText === "" ? [] : unescapedText.split("\n");
-				lines.splice(startLine - 1, endLine - startLine + 1, ...newLines);
+				if (unescapedText === "") {
+					lines.splice(startLine - 1, endLine - startLine + 1);
+				} else {
+					const originalRange = lines.slice(startLine - 1, endLine);
+					let newLines = toNewLines(unescapedText);
+					newLines = stripRangeBoundaryEcho(lines, startLine, endLine, newLines);
+					newLines = autocorrectReplacementLines(originalRange, newLines);
+					newLines = newLines.map((entry, idx) => {
+						if (idx !== 0) return entry;
+						return restoreLeadingIndent(lines[startLine - 1] ?? "", entry);
+					});
+					lines.splice(startLine - 1, endLine - startLine + 1, ...newLines);
+				}
 				break;
 			}
 			case "insert_after": {
 				const { line } = parseLineRef(edit.line);
-				const newLines = unescapeNewlines(edit.text).split("\n");
+				const newLines = stripInsertAnchorEcho(lines[line - 1] ?? "", toNewLines(unescapeNewlines(edit.text)));
 				lines.splice(line, 0, ...newLines);
 				break;
 			}
 			case "insert_before": {
 				const { line } = parseLineRef(edit.line);
-				const newLines = unescapeNewlines(edit.text).split("\n");
+				const newLines = stripInsertBeforeEcho(lines[line - 1] ?? "", toNewLines(unescapeNewlines(edit.text)));
 				lines.splice(line - 1, 0, ...newLines);
 				break;
 			}
@@ -555,22 +581,30 @@ export function applyHashlineEdits(content: string, edits: HashlineEdit[]): stri
 						`insert_between requires adjacent lines: after_line ${afterLine} and before_line ${beforeLine} are not adjacent`,
 					);
 				}
-				const newLines = unescapeNewlines(edit.text).split("\n");
+				const newLines = stripInsertBoundaryEcho(
+					lines[afterLine - 1] ?? "",
+					lines[beforeLine - 1] ?? "",
+					toNewLines(unescapeNewlines(edit.text)),
+				);
 				lines.splice(afterLine, 0, ...newLines);
 				break;
 			}
 			case "append": {
-				const newLines = unescapeNewlines(edit.text).split("\n");
+				const newLines = toNewLines(unescapeNewlines(edit.text));
 				lines.push(...newLines);
 				break;
 			}
 			case "prepend": {
-				const newLines = unescapeNewlines(edit.text).split("\n");
+				const newLines = toNewLines(unescapeNewlines(edit.text));
 				lines.unshift(...newLines);
 				break;
 			}
 		}
+
+		if (lines.join("\n") === snapshotBefore) {
+			noopEdits += 1;
+		}
 	}
 
-	return lines.join("\n");
+	return { content: lines.join("\n"), noopEdits };
 }

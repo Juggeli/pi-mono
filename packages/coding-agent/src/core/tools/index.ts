@@ -57,6 +57,7 @@ export {
 	HASHLINE_DICT,
 	HASHLINE_PATTERN,
 	HASHLINE_REF_PATTERN,
+	type HashlineApplyReport,
 	type HashlineEdit,
 	type HashlineMismatch,
 	type InsertAfterEdit,
