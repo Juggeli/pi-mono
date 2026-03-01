@@ -81,10 +81,10 @@ function resolveEnd(raw: RawHashlineEdit): string | undefined {
 	return normalizeAnchor(raw.end) ?? normalizeAnchor(raw.end_line);
 }
 
-function normalizeReplaceEdit(raw: RawHashlineEdit): ReplaceEdit {
+function normalizeReplaceEdit(raw: RawHashlineEdit, index: number): ReplaceEdit {
 	const pos = resolvePos(raw);
 	if (!pos) {
-		throw new Error("replace edit requires at least 'pos' anchor");
+		throw new Error(`Edit ${index}: replace requires at least one anchor line reference (pos or end)`);
 	}
 	const end = resolveEnd(raw);
 	const lines = raw.lines === null ? [] : resolveLines(raw);
@@ -115,18 +115,18 @@ function normalizePrependEdit(raw: RawHashlineEdit): PrependEdit {
  * and maps them to the canonical op/pos/end/lines schema.
  */
 export function normalizeHashlineEdits(rawEdits: RawHashlineEdit[]): HashlineEdit[] {
-	return rawEdits.map((raw): HashlineEdit => {
+	return rawEdits.map((raw, index): HashlineEdit => {
 		const op = resolveOp(raw);
 
 		switch (op) {
 			case "replace":
-				return normalizeReplaceEdit(raw);
+				return normalizeReplaceEdit(raw, index);
 			case "append":
 				return normalizeAppendEdit(raw);
 			case "prepend":
 				return normalizePrependEdit(raw);
 			default:
-				throw new Error(`Unknown edit op: "${op}"`);
+				throw new Error(`Edit ${index}: unsupported op "${op}". Use op/pos/end/lines format.`);
 		}
 	});
 }

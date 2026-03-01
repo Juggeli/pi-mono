@@ -372,7 +372,7 @@ describe("hashline", () => {
 				expect(result.content).toBe("line 1\na\nb\nc\nline 3");
 			});
 
-			it("deletes the target range when replacement text is empty", () => {
+			it("replaces the target range with an empty line when replacement text is empty", () => {
 				const content = "line 1\nline 2\nline 3";
 				const result = applyHashlineEdits(content, [
 					{
@@ -380,6 +380,19 @@ describe("hashline", () => {
 						pos: ref(2, "line 2"),
 						end: ref(3, "line 3"),
 						lines: "",
+					},
+				]);
+				expect(result.content).toBe("line 1\n");
+			});
+
+			it("deletes the target range when lines is null (via empty array)", () => {
+				const content = "line 1\nline 2\nline 3";
+				const result = applyHashlineEdits(content, [
+					{
+						op: "replace",
+						pos: ref(2, "line 2"),
+						end: ref(3, "line 3"),
+						lines: [] as string[],
 					},
 				]);
 				expect(result.content).toBe("line 1");

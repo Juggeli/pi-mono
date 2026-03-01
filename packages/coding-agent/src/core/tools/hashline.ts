@@ -540,20 +540,15 @@ export function applyHashlineEdits(content: string, edits: HashlineEdit[]): Hash
 						throw new Error(`Invalid range: start line ${startLine} cannot be greater than end line ${endLine}`);
 					}
 					const resolved = resolveLines(edit.lines);
-					if (resolved.length === 1 && resolved[0] === "") {
-						// Empty replacement = deletion
-						lines.splice(startLine - 1, endLine - startLine + 1);
-					} else {
-						const originalRange = lines.slice(startLine - 1, endLine);
-						let newLines = resolved;
-						newLines = stripRangeBoundaryEcho(lines, startLine, endLine, newLines);
-						newLines = autocorrectReplacementLines(originalRange, newLines);
-						newLines = newLines.map((entry, idx) => {
-							if (idx !== 0) return entry;
-							return restoreLeadingIndent(lines[startLine - 1] ?? "", entry);
-						});
-						lines.splice(startLine - 1, endLine - startLine + 1, ...newLines);
-					}
+					const originalRange = lines.slice(startLine - 1, endLine);
+					let newLines = resolved;
+					newLines = stripRangeBoundaryEcho(lines, startLine, endLine, newLines);
+					newLines = autocorrectReplacementLines(originalRange, newLines);
+					newLines = newLines.map((entry, idx) => {
+						if (idx !== 0) return entry;
+						return restoreLeadingIndent(lines[startLine - 1] ?? "", entry);
+					});
+					lines.splice(startLine - 1, endLine - startLine + 1, ...newLines);
 				} else {
 					// Single line replace (like old set_line)
 					const { line } = parseLineRef(edit.pos);
