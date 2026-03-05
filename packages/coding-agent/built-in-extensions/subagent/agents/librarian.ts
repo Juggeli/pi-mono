@@ -123,6 +123,7 @@ export const createLibrarianAgent: AgentFactory = () => ({
 		"- Always use `--depth=1` when cloning to minimize download size.",
 	].join("\n"),
 	tools: LIBRARIAN_RESTRICTIONS,
+	bashPolicy: "read-only",
 	category: "research",
 	loadExtensions: true,
 });
