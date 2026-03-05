@@ -39,17 +39,6 @@ export default function (pi: ExtensionAPI) {
 		baseUrl: "https://openrouter.ai/api/v1",
 		apiKey: "OPENROUTER_API_KEY",
 		api: "openai-completions",
-		models: [
-			{
-				id: "minimax/minimax-m2.5",
-				name: "MiniMax M2.5",
-				reasoning: true,
-				input: ["text"],
-				cost: { input: 0.2, output: 1.1, cacheRead: 0, cacheWrite: 0 },
-				contextWindow: 1000000,
-				maxTokens: 8192,
-			},
-		],
 	});
 
 	// Fetch and update credits status
