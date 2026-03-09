@@ -213,8 +213,8 @@ Parameters:
 - include_text: Return full page content
 - highlights: Return relevant text snippets
 - summary: Return LLM-generated summaries`,
-		shortDescription: "Search the web using Exa neural/keyword/deep search",
-		systemGuidelines: [
+		promptSnippet: "Search the web using Exa neural/keyword/deep search",
+		promptGuidelines: [
 			"Use exa_search for web research when you need current information, documentation, or real-world data",
 			"Use exa_contents to fetch full page content from URLs found via exa_search",
 		],
@@ -351,7 +351,7 @@ Parameters:
 - highlights: Include relevant text snippets (default: false)
 - summary: Include LLM-generated summary (default: false)
 - max_characters: Limit text/highlights length per page`,
-		shortDescription: "Extract content from URLs using Exa",
+		promptSnippet: "Extract content from URLs using Exa",
 
 		parameters: Type.Object({
 			urls: Type.Array(Type.String(), {

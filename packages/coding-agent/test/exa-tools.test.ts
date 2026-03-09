@@ -25,8 +25,8 @@ interface RegisteredTool {
 	name: string;
 	label: string;
 	description: string;
-	shortDescription?: string;
-	systemGuidelines?: string[];
+	promptSnippet?: string;
+	promptGuidelines?: string[];
 	parameters: unknown;
 	execute: (
 		toolCallId: string,
@@ -90,18 +90,18 @@ describe("exa-tools extension", () => {
 			expect(mockOn).toHaveBeenCalledWith("session_start", expect.any(Function));
 		});
 
-		it("has shortDescription for system prompt", () => {
+		it("has promptSnippet for system prompt", () => {
 			const searchTool = registeredTools.get("exa_search");
 			const contentsTool = registeredTools.get("exa_contents");
-			expect(searchTool?.shortDescription).toBe("Search the web using Exa neural/keyword/deep search");
-			expect(contentsTool?.shortDescription).toBe("Extract content from URLs using Exa");
+			expect(searchTool?.promptSnippet).toBe("Search the web using Exa neural/keyword/deep search");
+			expect(contentsTool?.promptSnippet).toBe("Extract content from URLs using Exa");
 		});
 
-		it("has systemGuidelines on exa_search", () => {
+		it("has promptGuidelines on exa_search", () => {
 			const searchTool = registeredTools.get("exa_search")!;
-			expect(searchTool.systemGuidelines).toBeDefined();
-			expect(searchTool.systemGuidelines!.length).toBeGreaterThan(0);
-			expect(searchTool.systemGuidelines).toContain(
+			expect(searchTool.promptGuidelines).toBeDefined();
+			expect(searchTool.promptGuidelines!.length).toBeGreaterThan(0);
+			expect(searchTool.promptGuidelines).toContain(
 				"Use exa_search for web research when you need current information, documentation, or real-world data",
 			);
 		});

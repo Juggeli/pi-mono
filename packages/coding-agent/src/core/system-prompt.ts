@@ -28,16 +28,6 @@ export interface SystemPromptToolInfo {
 	systemGuidelines?: string[];
 }
 
-const DEFAULT_SELECTED_TOOLS = ["read", "bash", "edit", "write"] as const;
-
-const buildDefaultToolEntries = (selectedTools?: string[]): SystemPromptToolInfo[] => {
-	const toolNames = selectedTools ?? DEFAULT_SELECTED_TOOLS;
-	return toolNames.flatMap((name) => {
-		const shortDescription = BUILTIN_TOOL_SHORT_DESCRIPTIONS[name as BuiltinToolName];
-		return shortDescription ? [{ name, shortDescription }] : [];
-	});
-};
-
 export interface BuildSystemPromptOptions {
 	/** Custom system prompt (replaces default). */
 	customPrompt?: string;
@@ -78,9 +68,6 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions = {}): strin
 
 	const contextFiles = providedContextFiles ?? [];
 	const skills = providedSkills ?? [];
-	const tools = providedTools ?? buildDefaultToolEntries(selectedTools);
-	const toolNames = tools.map((tool) => tool.name);
-	const toolSystemGuidelines = tools.flatMap((tool) => tool.systemGuidelines ?? []);
 
 	if (customPrompt) {
 		let prompt = customPrompt;
@@ -99,7 +86,7 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions = {}): strin
 		}
 
 		// Append skills section (only if read tool is available)
-		const customPromptHasRead = toolNames.includes("read");
+		const customPromptHasRead = !selectedTools || selectedTools.includes("read");
 		if (customPromptHasRead && skills.length > 0) {
 			prompt += formatSkillsForPrompt(skills);
 		}
@@ -117,13 +104,14 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions = {}): strin
 	const examplesPath = getExamplesPath();
 
 	// Build tools list based on selected tools.
-	// Built-ins use toolDescriptions. Custom tools can provide one-line snippets.
+	// Built-ins use BUILTIN_TOOL_SHORT_DESCRIPTIONS. Custom tools can provide one-line snippets.
 	const tools = selectedTools || ["read", "bash", "edit", "write"];
 	const toolsList =
 		tools.length > 0
 			? tools
 					.map((name) => {
-						const snippet = toolSnippets?.[name] ?? toolDescriptions[name] ?? name;
+						const snippet =
+							toolSnippets?.[name] ?? BUILTIN_TOOL_SHORT_DESCRIPTIONS[name as BuiltinToolName] ?? name;
 						return `- ${name}: ${snippet}`;
 					})
 					.join("\n")
@@ -140,13 +128,13 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions = {}): strin
 		guidelinesList.push(guideline);
 	};
 
-	const hasBash = toolNames.includes("bash");
-	const hasEdit = toolNames.includes("edit");
-	const hasWrite = toolNames.includes("write");
-	const hasGrep = toolNames.includes("grep");
-	const hasFind = toolNames.includes("find");
-	const hasLs = toolNames.includes("ls");
-	const hasRead = toolNames.includes("read");
+	const hasBash = tools.includes("bash");
+	const hasEdit = tools.includes("edit");
+	const hasWrite = tools.includes("write");
+	const hasGrep = tools.includes("grep");
+	const hasFind = tools.includes("find");
+	const hasLs = tools.includes("ls");
+	const hasRead = tools.includes("read");
 
 	// File exploration guidelines
 	if (hasBash && !hasGrep && !hasFind && !hasLs) {

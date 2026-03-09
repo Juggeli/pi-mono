@@ -188,8 +188,8 @@ Search tips:
 - Filter by path: "config path:webpack"
 - Language is auto-detected from file extension
 - Results include syntax-highlighted snippets with line numbers`,
-		shortDescription: "Search code across GitHub repos via grep.app",
-		systemGuidelines: [
+		promptSnippet: "Search code across GitHub repos via grep.app",
+		promptGuidelines: [
 			"Use grep_code_search to find real-world usage examples and implementation patterns across GitHub",
 		],
 

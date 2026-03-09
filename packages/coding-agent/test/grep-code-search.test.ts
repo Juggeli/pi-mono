@@ -21,8 +21,8 @@ interface RegisteredTool {
 	name: string;
 	label: string;
 	description: string;
-	shortDescription?: string;
-	systemGuidelines?: string[];
+	promptSnippet?: string;
+	promptGuidelines?: string[];
 	parameters: unknown;
 	execute: (
 		toolCallId: string,
@@ -64,13 +64,13 @@ describe("grep-code-search extension", () => {
 			expect(registeredTool.description).toContain("GitHub");
 		});
 
-		it("has shortDescription for system prompt", () => {
-			expect(registeredTool.shortDescription).toBe("Search code across GitHub repos via grep.app");
+		it("has promptSnippet for system prompt", () => {
+			expect(registeredTool.promptSnippet).toBe("Search code across GitHub repos via grep.app");
 		});
 
-		it("has systemGuidelines", () => {
-			expect(registeredTool.systemGuidelines).toBeDefined();
-			expect(registeredTool.systemGuidelines!.length).toBeGreaterThan(0);
+		it("has promptGuidelines", () => {
+			expect(registeredTool.promptGuidelines).toBeDefined();
+			expect(registeredTool.promptGuidelines!.length).toBeGreaterThan(0);
 		});
 
 		it("has parameters with query and from", () => {
